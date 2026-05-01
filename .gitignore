@@ -1,0 +1,10 @@
+build/
+cmake-build-*/
+.vs/
+.vscode/
+*.user
+*.suo
+JuceLibraryCode/
+Builds/
+.DS_Store
+*.swp
