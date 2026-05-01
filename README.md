@@ -1,8 +1,59 @@
 # VaporKey
 
-A CPU-efficient wavetable synthesizer VST3 built with JUCE, designed for vaporwave and synthwave production. VaporKey combines clean band-limited oscillators with a dedicated "analog warmth" section and a full FX chain — all wrapped in a neon-lit aesthetic with a perspective grid, scan-lined sun, and glowing knobs.
+**A CPU-efficient wavetable synthesizer VST3 for vaporwave, synthwave, and lo-fi production.**
 
-Targeted at FL Studio and other VST3 hosts on Windows, macOS, and Linux.
+VaporKey pairs three band-limited wavetable oscillators with a dedicated *Analog Warmth* section, a built-in arpeggiator, and a full mix-ready FX chain — all wrapped in a neon-lit UI with a perspective grid, scan-lined sun, and glowing knobs. Built with [JUCE 8](https://juce.com/) for FL Studio and any other VST3 host on Windows, macOS, and Linux.
+
+> **Current release:** v0.3 — adds arpeggiator, drag-and-drop user wavetables, expanded category-based preset browser, and tempo-synced LFOs.
+
+---
+
+## Quick Start
+
+### 1. Download
+
+Grab the latest build for your platform from the [**Releases**](https://github.com/rocketbombs/VaporKey/releases) page, or from the most recent successful run on the [**Actions**](https://github.com/rocketbombs/VaporKey/actions) tab:
+
+| Platform | Artifact | Install path |
+|----------|----------|--------------|
+| **Windows** | `VaporKey-Windows-VST3` | `C:\Program Files\Common Files\VST3\` |
+| **macOS** (universal) | `VaporKey-macOS-VST3` | `~/Library/Audio/Plug-Ins/VST3/` |
+| **Linux** | `VaporKey-Linux-VST3` | `~/.vst3/` |
+
+### 2. Install
+
+Unzip the artifact and copy `VaporKey.vst3` into the install path above. macOS users may need to right-click → **Open** the first time, or run:
+
+```bash
+xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/VaporKey.vst3
+```
+
+### 3. Scan in your DAW
+
+- **FL Studio** — *Options → Manage plugins → Find more plugins*. VaporKey appears under **Generators**.
+- **Ableton / Bitwig / Reaper / Cubase** — rescan VST3s in your plugin preferences.
+- **Standalone** — a `VaporKey` standalone executable is also produced if you want to play it without a DAW.
+
+That's it. Load a preset, grab a knob, hit some keys.
+
+---
+
+## Table of Contents
+
+- [Feature Overview](#feature-overview)
+  - [Oscillators](#oscillators)
+  - [Filter](#filter)
+  - [Envelopes](#envelopes)
+  - [LFOs](#lfos)
+  - [Arpeggiator](#arpeggiator)
+  - [Macro Modulation](#macro-modulation)
+  - [Analog Warmth](#analog-warmth)
+  - [FX Chain](#fx-chain)
+  - [Polyphony & MIDI](#polyphony--midi)
+  - [Presets](#presets)
+- [Building from Source](#building-from-source)
+- [CI & Releases](#ci--releases)
+- [License](#license)
 
 ---
 
@@ -10,11 +61,9 @@ Targeted at FL Studio and other VST3 hosts on Windows, macOS, and Linux.
 
 ### Oscillators
 
-VaporKey has three independent wavetable oscillators plus a sub oscillator and a noise generator.
+Three independent wavetable oscillators plus a sub oscillator and a noise generator.
 
-**Wavetable oscillators (×3)**
-
-Each oscillator draws from one of nine factory wavetable banks:
+**Wavetable oscillators (×3)** — each draws from one of nine factory wavetable banks:
 
 | Bank | Character |
 |------|-----------|
@@ -26,12 +75,12 @@ Each oscillator draws from one of nine factory wavetable banks:
 | Digital | Aliased / bit-reduced textures |
 | Harmonic | Additive harmonic series |
 | Glass | Glassy, pure overtone stacks |
-| Reso | Resonant/comb-filtered timbres |
+| Reso | Resonant / comb-filtered timbres |
 
-The **Position** knob morphs continuously between the 8 frames within the selected bank. Per-oscillator controls:
+The **Position** knob morphs continuously between the 8 frames of the selected bank. Per-oscillator controls:
 
 - **On/Off** — bypass the oscillator entirely
-- **Shape** — select the wavetable bank
+- **Shape** — select wavetable bank
 - **Position** — morph through the bank's frames
 - **Level** (dB) and **Pan**
 - **Coarse** (semitones) and **Fine** (cents) tuning
@@ -41,19 +90,17 @@ The **Position** knob morphs continuously between the 8 frames within the select
 
 All wavetables are **mip-mapped** (10 octave levels, 2048 samples per frame) to eliminate aliasing across the keyboard.
 
-**Sub oscillator**
+**Custom wavetables.** Drag any `.wav` file onto the wavetable display — or right-click → **Load .wav…** — to use it as the active oscillator's table. Files are sliced into 8 frames, normalized, and mip-mapped on import.
 
-A simple sub underneath the main oscillators, selectable as Sine, Square, or Triangle, tunable one or two octaves below. Has its own level control.
+**Sub oscillator** — Sine, Square, or Triangle, tunable one or two octaves below, with its own level control.
 
-**Noise generator**
-
-Switchable White, Pink, or Brown noise with a dedicated level knob. Useful for breath, texture, or layering into pads.
+**Noise generator** — White, Pink, or Brown with a dedicated level knob. Useful for breath, texture, or layering into pads.
 
 ---
 
 ### Filter
 
-A **state-variable TPT filter** (Topology-Preserving Transform) switchable between Low-pass, Band-pass, and High-pass modes.
+A **state-variable TPT filter** (Topology-Preserving Transform) switchable between Low-pass, Band-pass, and High-pass.
 
 - **Cutoff** and **Resonance**
 - **Drive** — pre-filter saturation that pushes the filter into self-oscillation territory
@@ -65,14 +112,9 @@ A **state-variable TPT filter** (Topology-Preserving Transform) switchable betwe
 
 ### Envelopes
 
-**Amp envelope (ADSR)**
-Controls volume shape. A velocity sensitivity knob scales how strongly note velocity affects the envelope peak.
-
-**Mod envelope (ADSR)**
-Assignable envelope primarily routed to filter cutoff (via the Mod Env Amount knob). Also has a velocity sensitivity control.
-
-**Pitch envelope**
-A fast decay-only envelope for percussive pitch plucks and kicks. Amount is ±24 semitones; Decay sets how quickly it returns to the base pitch.
+- **Amp envelope (ADSR)** — volume shape, with a velocity-sensitivity knob.
+- **Mod envelope (ADSR)** — primarily routed to filter cutoff via the *Mod Env Amount* knob, with its own velocity sensitivity.
+- **Pitch envelope** — fast decay-only envelope for percussive plucks and kicks. Amount is ±24 semitones; *Decay* sets how quickly it returns to the base pitch.
 
 ---
 
@@ -81,17 +123,30 @@ A fast decay-only envelope for percussive pitch plucks and kicks. Amount is ±24
 Two independent LFOs, each with:
 
 - **Shape** — Sine, Triangle, Saw+, Saw−, Square, or Sample & Hold
-- **Rate** — free-running Hz rate
-- **Sync** — lock rate to host BPM with selectable divisions: 1/32, 1/16, 1/8, 1/4D, 1/4, 1/2, 1/1, 2/1
+- **Rate** — free-running Hz
+- **Sync** — lock to host BPM with divisions: 1/32, 1/16, 1/8, 1/4D, 1/4, 1/2, 1/1, 2/1
 - **Amount**
 
 LFO1 is primarily routed to filter cutoff; LFO2 to wavetable position.
 
 ---
 
+### Arpeggiator
+
+A built-in arpeggiator that runs on incoming MIDI before the synth voices.
+
+- **Modes** — Up, Down, Up/Down, Down/Up, As Played, Random
+- **Rate** — tempo-synced (1/32 through 2/1, with dotted divisions)
+- **Octaves** — 1–4
+- **Gate** — note length as a fraction of the step
+- **Swing** — 50–75%
+- **Latch** — hold notes after release until a new chord is played
+
+---
+
 ### Macro Modulation
 
-Four freely assignable macro knobs let you map a single control to any modulation destination. Available destinations:
+Four freely assignable macro knobs map a single control to any modulation destination:
 
 - Filter Cutoff / Resonance
 - Oscillator 1/2/3 Position, Level, or Detune
@@ -100,7 +155,7 @@ Four freely assignable macro knobs let you map a single control to any modulatio
 - Distortion Drive
 - Stereo Width
 
-Each macro has its own Amount knob to scale the modulation depth.
+Each macro has its own *Amount* knob to scale modulation depth.
 
 ---
 
@@ -117,19 +172,9 @@ A four-knob section that adds organic imperfection to the sound:
 
 ---
 
-### Polyphony & MIDI
-
-- **16-voice polyphony**
-- **Mono mode** with configurable **Legato** (envelopes do not retrigger on held notes)
-- **Glide** (portamento) with a 0–2 second time range, applied in mono and legato mode
-- **Pitch bend** with a configurable range of 1–24 semitones
-- Mod wheel and channel aftertouch are available as modulation sources
-
----
-
 ### FX Chain
 
-The post-synthesis FX chain runs in this order:
+The post-synthesis FX chain runs in this fixed order:
 
 1. **Distortion** — Soft (tanh), Hard (clip), Fold (wavefold), or Bit (bit-reduction) modes with Drive and wet/dry Mix
 2. **3-Band EQ** — Low shelf, parametric Mid (with frequency control), High shelf
@@ -142,9 +187,19 @@ The post-synthesis FX chain runs in this order:
 
 ---
 
+### Polyphony & MIDI
+
+- **16-voice polyphony**
+- **Mono mode** with configurable **Legato** (envelopes do not retrigger on held notes)
+- **Glide** (portamento) with a 0–2 second time range, applied in mono and legato modes
+- **Pitch bend** with a configurable range of 1–24 semitones
+- Mod wheel and channel aftertouch are available as modulation sources
+
+---
+
 ### Presets
 
-Ten factory presets ship with VaporKey:
+Factory presets ship organized into categories (Leads, Pads, Bass, Keys, Plucks, FX) and include:
 
 | Preset | Description |
 |--------|-------------|
@@ -159,25 +214,30 @@ Ten factory presets ship with VaporKey:
 | Vapor Keys | Clean electric-piano-style keys with chorus and delay |
 | Hover Drone | Evolving, fully detuned ambient drone |
 
-In addition to factory presets, VaporKey supports **user presets** that are saved to and loaded from your system's user application data directory (`RocketBombs/VaporKey/Presets`). User presets can be saved, renamed, and deleted from within the plugin UI.
+…plus more shipped in the v0.3 expanded category browser.
+
+**User presets** are saved to your system's user application data directory (`RocketBombs/VaporKey/Presets`) and can be saved, renamed, and deleted from within the plugin UI.
 
 ---
 
 ## Building from Source
 
-**Requirements:** CMake 3.22+, a C++17 compiler. JUCE 8.0.4 is fetched automatically.
+**Requirements:** CMake 3.22+, a C++17 compiler. JUCE 8.0.4 is fetched automatically by CMake — no separate JUCE install needed.
 
 ```bash
+git clone https://github.com/rocketbombs/VaporKey.git
+cd VaporKey
+
 # Configure (Release)
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-# Build only the VST3 (fastest)
+# Build the VST3 (fastest)
 cmake --build build --target VaporKey_VST3 --parallel
 ```
 
 Output: `build/VaporKey_artefacts/Release/VST3/VaporKey.vst3`
 
-A **Standalone** build target (`VaporKey_Standalone`) is also available if you want to run VaporKey outside a DAW.
+A **Standalone** target (`VaporKey_Standalone`) is also available if you want to run VaporKey outside a DAW.
 
 ### macOS (universal binary)
 
@@ -186,7 +246,7 @@ cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
 cmake --build build --config Release --target VaporKey_VST3 --parallel
 ```
 
-### Linux dependencies (Ubuntu/Debian)
+### Linux dependencies (Ubuntu / Debian)
 
 ```bash
 sudo apt-get install libasound2-dev libjack-jackd2-dev \
@@ -197,9 +257,9 @@ sudo apt-get install libasound2-dev libjack-jackd2-dev \
 
 ---
 
-## CI Builds (GitHub Actions)
+## CI & Releases
 
-Every push to `main` or `claude/**` branches triggers builds on all three platforms. Artifacts are uploaded to the Actions run:
+Every push to `main` or `claude/**` and every `v*` tag triggers builds on all three platforms. Artifacts are uploaded to the run:
 
 | Artifact | Platform |
 |----------|----------|
@@ -207,13 +267,7 @@ Every push to `main` or `claude/**` branches triggers builds on all three platfo
 | `VaporKey-macOS-VST3` | macOS 14 (universal x86_64 + arm64) |
 | `VaporKey-Linux-VST3` | Ubuntu 22.04 |
 
----
-
-## Installing in FL Studio (Windows)
-
-1. Download `VaporKey-Windows-VST3` from the latest GitHub Actions run.
-2. Copy `VaporKey.vst3` into `C:\Program Files\Common Files\VST3\` (or any folder FL Studio scans).
-3. In FL Studio: **Options → Manage plugins → Find more plugins**. VaporKey appears under *Generators*.
+Tagged releases also publish to the [Releases](https://github.com/rocketbombs/VaporKey/releases) page.
 
 ---
 
