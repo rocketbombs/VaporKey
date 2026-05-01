@@ -3,31 +3,13 @@
 #include "PluginProcessor.h"
 #include "LookAndFeel.h"
 
+// ----- Widget primitives -----
+
 class VaporKnob : public juce::Component
 {
 public:
-    VaporKnob (juce::AudioProcessorValueTreeState& s, const juce::String& paramID, const juce::String& displayName)
-        : name (displayName)
-    {
-        slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 70, 13);
-        slider.setName (displayName);
-        addAndMakeVisible (slider);
-
-        label.setText (displayName, juce::dontSendNotification);
-        label.setJustificationType (juce::Justification::centred);
-        label.setColour (juce::Label::textColourId, VK::Colors::neonCyan);
-        addAndMakeVisible (label);
-
-        attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (s, paramID, slider);
-    }
-
-    void resized() override
-    {
-        auto r = getLocalBounds();
-        label.setBounds (r.removeFromTop (14));
-        slider.setBounds (r);
-    }
+    VaporKnob (juce::AudioProcessorValueTreeState& s, const juce::String& paramID, const juce::String& displayName);
+    void resized() override;
 
     juce::Slider slider;
     juce::Label  label;
@@ -39,60 +21,43 @@ class VaporCombo : public juce::Component
 {
 public:
     VaporCombo (juce::AudioProcessorValueTreeState& s, const juce::String& paramID,
-                const juce::String& displayName, const juce::StringArray& items)
-    {
-        for (int i = 0; i < items.size(); ++i) box.addItem (items[i], i + 1);
-        addAndMakeVisible (box);
-        label.setText (displayName, juce::dontSendNotification);
-        label.setJustificationType (juce::Justification::centred);
-        label.setColour (juce::Label::textColourId, VK::Colors::neonCyan);
-        addAndMakeVisible (label);
-        attachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (s, paramID, box);
-    }
-    void resized() override
-    {
-        auto r = getLocalBounds();
-        label.setBounds (r.removeFromTop (14));
-        box.setBounds (r.reduced (4, 6));
-    }
+                const juce::String& displayName, const juce::StringArray& items);
+    void resized() override;
+
     juce::ComboBox box;
-    juce::Label label;
+    juce::Label    label;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> attachment;
 };
 
 class VaporToggle : public juce::Component
 {
 public:
-    VaporToggle (juce::AudioProcessorValueTreeState& s, const juce::String& paramID, const juce::String& text)
-    {
-        btn.setButtonText (text);
-        btn.setClickingTogglesState (true);
-        addAndMakeVisible (btn);
-        attachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (s, paramID, btn);
-    }
-    void resized() override { btn.setBounds (getLocalBounds().reduced (2)); }
+    VaporToggle (juce::AudioProcessorValueTreeState& s, const juce::String& paramID, const juce::String& text);
+    void resized() override;
+
     juce::TextButton btn;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> attachment;
 };
 
+// Click-drag-to-scrub wavetable display (drives the position parameter).
 class WavetableDisplay : public juce::Component, private juce::Timer
 {
 public:
-    WavetableDisplay (juce::AudioProcessorValueTreeState& s, int oscIndex)
-        : apvts (s), idx (oscIndex)
-    {
-        startTimerHz (24);
-    }
-
-    void paint (juce::Graphics& g) override;
+    WavetableDisplay (juce::AudioProcessorValueTreeState& s, int oscIndex);
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent& e) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseDoubleClick (const juce::MouseEvent& e) override;
 
 private:
     void timerCallback() override { repaint(); }
+    void setPositionFromMouse (const juce::MouseEvent& e);
+
     juce::AudioProcessorValueTreeState& apvts;
     int idx;
 };
 
-// --- Pages ---
+// ----- Pages -----
 
 class OscPage : public juce::Component
 {
@@ -162,18 +127,13 @@ public:
 private:
     std::unique_ptr<VaporKnob>  distDrive, distMix;
     std::unique_ptr<VaporCombo> distType;
-
     std::unique_ptr<VaporKnob>  chMix, chRate, chDepth;
     std::unique_ptr<VaporKnob>  phMix, phRate, phDepth, phFb;
-
     std::unique_ptr<VaporKnob>  eqLow, eqMid, eqMidF, eqHigh;
-
     std::unique_ptr<VaporKnob>  dlMix, dlTime, dlFb;
     std::unique_ptr<VaporToggle> dlSync;
     std::unique_ptr<VaporCombo> dlDiv;
-
     std::unique_ptr<VaporKnob>  rvMix, rvSize, rvDamp;
-
     std::unique_ptr<VaporToggle> compOn;
     std::unique_ptr<VaporKnob>  compThr, compRatio, compAtk, compRel, compMakeup;
 };
@@ -187,9 +147,21 @@ public:
 private:
     VaporKeyAudioProcessor& proc;
     std::unique_ptr<VaporKnob> gain, width;
-    juce::ComboBox presetBox;
-    juce::TextButton prevBtn { "<" }, nextBtn { ">" };
-    juce::Label about;
+    juce::ListBox presetList;
+    juce::TextButton prevBtn { "<  PREV" }, nextBtn { "NEXT  >" };
+    juce::Label presetLabel, presetNowLabel, brand, tagline, copy;
+
+    class PresetListModel : public juce::ListBoxModel
+    {
+    public:
+        explicit PresetListModel (MasterPage& o) : owner (o) {}
+        int getNumRows() override;
+        void paintListBoxItem (int row, juce::Graphics&, int width, int height, bool selected) override;
+        void listBoxItemClicked (int row, const juce::MouseEvent&) override;
+    private:
+        MasterPage& owner;
+    };
+    std::unique_ptr<PresetListModel> presetModel;
 };
 
 // Top-level editor with TabbedComponent
