@@ -271,7 +271,7 @@ FilterEnvPage::FilterEnvPage (VaporKeyAudioProcessor& p)
     env    = std::make_unique<VaporKnob>  (p.apvts, "f_env",   "Env");     addAndMakeVisible (*env);
     drive  = std::make_unique<VaporKnob>  (p.apvts, "f_drive", "Drive");   addAndMakeVisible (*drive);
     key    = std::make_unique<VaporKnob>  (p.apvts, "f_key",   "Key");     addAndMakeVisible (*key);
-    type   = std::make_unique<VaporCombo> (p.apvts, "f_type",  "Type", { "LP", "BP", "HP" }); addAndMakeVisible (*type);
+    type   = std::make_unique<VaporCombo> (p.apvts, "f_type",  "Type", juce::StringArray { "LP", "BP", "HP" }); addAndMakeVisible (*type);
 
     aA = std::make_unique<VaporKnob> (p.apvts, "a_a",   "A");   addAndMakeVisible (*aA);
     aD = std::make_unique<VaporKnob> (p.apvts, "a_d",   "D");   addAndMakeVisible (*aD);
