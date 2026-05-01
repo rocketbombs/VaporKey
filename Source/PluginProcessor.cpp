@@ -2,6 +2,8 @@
 #include "PluginEditor.h"
 #include "SynthVoice.h"
 #include "Presets.h"
+#include <algorithm>
+#include <initializer_list>
 
 namespace IDs {
     inline juce::String on  (int i) { return "osc" + juce::String (i + 1) + "_on"; }
@@ -148,6 +150,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout VaporKeyAudioProcessor::crea
     v.push_back (std::make_unique<P> (juce::ParameterID { "gain", 1 }, "Master", juce::NormalisableRange<float> (-60.0f, 6.0f), -6.0f));
     v.push_back (std::make_unique<P> (juce::ParameterID { "width", 1 }, "Width", juce::NormalisableRange<float> (0.0f, 2.0f), 1.0f));
 
+    // Arpeggiator
+    v.push_back (std::make_unique<PB> (juce::ParameterID { "arp_on", 1 }, "Arp On", false));
+    v.push_back (std::make_unique<PC> (juce::ParameterID { "arp_mode", 1 }, "Arp Mode", ArpMode::names(), 0));
+    v.push_back (std::make_unique<PC> (juce::ParameterID { "arp_div", 1 }, "Arp Rate", syncDivNames(), 1));
+    v.push_back (std::make_unique<PI> (juce::ParameterID { "arp_octaves", 1 }, "Arp Octaves", 1, 4, 1));
+    v.push_back (std::make_unique<P>  (juce::ParameterID { "arp_gate", 1 }, "Arp Gate", juce::NormalisableRange<float> (0.05f, 1.0f), 0.5f));
+    v.push_back (std::make_unique<P>  (juce::ParameterID { "arp_swing", 1 }, "Arp Swing", juce::NormalisableRange<float> (0.0f, 0.5f), 0.0f));
+    v.push_back (std::make_unique<PB> (juce::ParameterID { "arp_latch", 1 }, "Arp Latch", false));
+
     // Macros
     auto destNames = ModDest::names();
     for (int m = 0; m < SynthParams::kNumMacros; ++m)
@@ -257,6 +268,14 @@ void VaporKeyAudioProcessor::cacheParams()
         synthParams.macroDest[m] = getF (prefix + "dest");
         synthParams.macroAmt[m]  = getF (prefix + "amt");
     }
+
+    synthParams.arpOn      = getF ("arp_on");
+    synthParams.arpMode    = getF ("arp_mode");
+    synthParams.arpDiv     = getF ("arp_div");
+    synthParams.arpOctaves = getF ("arp_octaves");
+    synthParams.arpGate    = getF ("arp_gate");
+    synthParams.arpSwing   = getF ("arp_swing");
+    synthParams.arpLatch   = getF ("arp_latch");
 }
 
 void VaporKeyAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -302,6 +321,253 @@ void VaporKeyAudioProcessor::updateMacroSums()
         const float amt = synthParams.macroAmt[m]->load();   // -1..1
         synthParams.modSum[dest] += val * amt;
     }
+}
+
+void VaporKeyAudioProcessor::processArpeggiator (juce::MidiBuffer& midi, int numSamples)
+{
+    const bool on    = *synthParams.arpOn > 0.5f;
+    const bool latch = *synthParams.arpLatch > 0.5f;
+
+    // First, snapshot incoming events. We strip note-on/off (they belong to
+    // the arp), and pass through everything else (CC, pitch bend, AT).
+    juce::MidiBuffer pass;
+    juce::Array<juce::MidiMessage> noteEvents;
+    juce::Array<int>               noteSamples;
+
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOnOrOff())
+        {
+            noteEvents.add (msg);
+            noteSamples.add (meta.samplePosition);
+        }
+        else
+        {
+            pass.addEvent (msg, meta.samplePosition);
+        }
+    }
+
+    // Transition into/out of arp mode: clear pending state cleanly.
+    if (on != arpWasOn)
+    {
+        if (arpCurrentNote >= 0)
+            pass.addEvent (juce::MidiMessage::noteOff (arpCurrentChan, arpCurrentNote), 0);
+        arpCurrentNote = -1;
+        arpSamplesToOff = -1;
+        arpSamplesToStep = 0.0;
+        arpStepIdx = 0;
+        arpOctOffset = 0;
+        arpUpDir = true;
+        if (! on) { arpHeld.clearQuick(); arpLatched.clearQuick(); }
+        arpWasOn = on;
+    }
+
+    if (! on)
+    {
+        // Pass note events through untouched.
+        for (int i = 0; i < noteEvents.size(); ++i)
+            pass.addEvent (noteEvents.getReference (i), noteSamples.getReference (i));
+        midi.swapWith (pass);
+        return;
+    }
+
+    // ---- Arp on ----
+    // Step duration in samples, derived from tempo + sync division.
+    const int divIdx = (int) (synthParams.arpDiv->load() + 0.5f);
+    const double beats = syncDivToBeats (divIdx);
+    const double bpm   = juce::jmax (20.0, currentBpm);
+    const double stepSamples = juce::jmax (4.0, beats * 60.0 / bpm * sr);
+
+    const int   mode    = (int) (synthParams.arpMode->load() + 0.5f);
+    const int   numOct  = juce::jlimit (1, 4, (int) synthParams.arpOctaves->load());
+    const float gate    = juce::jlimit (0.05f, 1.0f, synthParams.arpGate->load());
+    const float swing   = juce::jlimit (0.0f, 0.5f, synthParams.arpSwing->load());
+
+    // Walk the block, advancing time and emitting events at sub-block points.
+    int cursor = 0;
+    int eventIdx = 0;
+
+    auto applyHeldNoteEvent = [this, latch] (const juce::MidiMessage& msg)
+    {
+        if (msg.isNoteOn())
+        {
+            // Latch behavior: a fresh press while no notes physically held should
+            // start a new chord (clear latched buffer first).
+            if (latch && arpHeld.isEmpty())
+                arpLatched.clearQuick();
+
+            const int n = msg.getNoteNumber();
+            for (int j = arpHeld.size(); --j >= 0;)
+                if (arpHeld.getReference (j).note == n) arpHeld.remove (j);
+            arpHeld.add ({ n, msg.getVelocity() });
+
+            if (latch)
+            {
+                for (int j = arpLatched.size(); --j >= 0;)
+                    if (arpLatched.getReference (j).note == n) arpLatched.remove (j);
+                arpLatched.add ({ n, msg.getVelocity() });
+            }
+        }
+        else if (msg.isNoteOff())
+        {
+            const int n = msg.getNoteNumber();
+            for (int j = arpHeld.size(); --j >= 0;)
+                if (arpHeld.getReference (j).note == n) arpHeld.remove (j);
+        }
+    };
+
+    auto pickStepNote = [&] (const juce::Array<ArpHeldNote>& source) -> ArpHeldNote
+    {
+        // Sorted copy for ordered modes.
+        juce::Array<ArpHeldNote> ordered = source;
+        std::sort (ordered.begin(), ordered.end(),
+                   [] (const ArpHeldNote& a, const ArpHeldNote& b) { return a.note < b.note; });
+
+        const int N = ordered.size();
+        if (N == 0) return { -1, 0 };
+
+        const int totalSteps = N * numOct;
+
+        auto wrapStep = [&] (int s)
+        {
+            const int m = s % juce::jmax (1, totalSteps);
+            return m < 0 ? m + totalSteps : m;
+        };
+
+        switch (mode)
+        {
+            case ArpMode::Up:
+            {
+                const int s = wrapStep (arpStepIdx);
+                arpOctOffset = (s / N) * 12;
+                return { ordered.getReference (s % N).note + arpOctOffset, ordered.getReference (s % N).velocity };
+            }
+            case ArpMode::Down:
+            {
+                const int s = wrapStep (arpStepIdx);
+                const int rev = totalSteps - 1 - s;
+                arpOctOffset = (rev / N) * 12;
+                return { ordered.getReference (rev % N).note + arpOctOffset, ordered.getReference (rev % N).velocity };
+            }
+            case ArpMode::UpDown:
+            {
+                const int span = juce::jmax (1, 2 * totalSteps - 2);
+                const int s    = ((arpStepIdx % span) + span) % span;
+                const int idx  = (s < totalSteps) ? s : (span - s);
+                arpOctOffset = (idx / N) * 12;
+                return { ordered.getReference (idx % N).note + arpOctOffset, ordered.getReference (idx % N).velocity };
+            }
+            case ArpMode::DownUp:
+            {
+                const int span = juce::jmax (1, 2 * totalSteps - 2);
+                const int s    = ((arpStepIdx % span) + span) % span;
+                const int idxFwd = (s < totalSteps) ? s : (span - s);
+                const int idx    = totalSteps - 1 - idxFwd;
+                arpOctOffset = (idx / N) * 12;
+                return { ordered.getReference (idx % N).note + arpOctOffset, ordered.getReference (idx % N).velocity };
+            }
+            case ArpMode::AsPlayed:
+            {
+                const int s = wrapStep (arpStepIdx);
+                arpOctOffset = (s / N) * 12;
+                return { source.getReference (s % N).note + arpOctOffset, source.getReference (s % N).velocity };
+            }
+            case ArpMode::Random:
+            {
+                const int oct = arpRng.nextInt (numOct);
+                const int idx = arpRng.nextInt (N);
+                return { ordered.getReference (idx).note + oct * 12, ordered.getReference (idx).velocity };
+            }
+        }
+        return { -1, 0 };
+    };
+
+    while (cursor < numSamples)
+    {
+        // Apply any input note events at or before the cursor that we haven't yet processed.
+        while (eventIdx < noteEvents.size() && noteSamples.getReference (eventIdx) <= cursor)
+        {
+            applyHeldNoteEvent (noteEvents.getReference (eventIdx));
+            ++eventIdx;
+        }
+
+        // Active source for picking: physical held + (optionally) latched extras.
+        juce::Array<ArpHeldNote> activeSource = arpHeld;
+        if (latch)
+        {
+            for (const auto& e : arpLatched)
+            {
+                bool found = false;
+                for (const auto& a : activeSource) if (a.note == e.note) { found = true; break; }
+                if (! found) activeSource.add (e);
+            }
+        }
+
+        // How many samples until the next event boundary?
+        double samplesToNextStep = arpSamplesToStep;
+        const double samplesToInputEvent = (eventIdx < noteEvents.size())
+            ? (double) (noteSamples.getReference (eventIdx) - cursor) : 1e18;
+        const double samplesToOff = (arpSamplesToOff >= 0) ? (double) arpSamplesToOff : 1e18;
+
+        const double dt = std::min ({ (double) (numSamples - cursor),
+                                       samplesToNextStep,
+                                       samplesToInputEvent,
+                                       samplesToOff });
+
+        cursor += (int) dt;
+        arpSamplesToStep -= dt;
+        if (arpSamplesToOff >= 0) arpSamplesToOff -= (int) dt;
+
+        // Fire scheduled note-off if it's now due.
+        if (arpSamplesToOff == 0 && arpCurrentNote >= 0)
+        {
+            pass.addEvent (juce::MidiMessage::noteOff (arpCurrentChan, arpCurrentNote), juce::jmin (cursor, numSamples - 1));
+            arpCurrentNote = -1;
+            arpSamplesToOff = -1;
+        }
+
+        // Step boundary?
+        if (arpSamplesToStep <= 0.0)
+        {
+            // End any still-sounding note (e.g. when gate == 1.0 it overlaps).
+            if (arpCurrentNote >= 0)
+            {
+                pass.addEvent (juce::MidiMessage::noteOff (arpCurrentChan, arpCurrentNote), juce::jmin (cursor, numSamples - 1));
+                arpCurrentNote = -1;
+                arpSamplesToOff = -1;
+            }
+
+            if (! activeSource.isEmpty())
+            {
+                const ArpHeldNote pick = pickStepNote (activeSource);
+                if (pick.note >= 0)
+                {
+                    const int note = juce::jlimit (0, 127, pick.note);
+                    const int vel  = juce::jlimit (1, 127, pick.velocity > 0 ? pick.velocity : 100);
+                    pass.addEvent (juce::MidiMessage::noteOn (arpCurrentChan, note, (juce::uint8) vel),
+                                   juce::jmin (cursor, numSamples - 1));
+                    arpCurrentNote = note;
+                    arpSamplesToOff = juce::jmax (1, (int) (stepSamples * gate));
+                }
+            }
+
+            // Schedule next step. Apply swing on odd steps (delay them).
+            const bool oddStep = (arpStepIdx & 1) != 0;
+            const double stepDur = stepSamples * (oddStep ? (1.0 + swing) : (1.0 - swing));
+            arpSamplesToStep += stepDur;
+            ++arpStepIdx;
+        }
+    }
+
+    // Apply any remaining input events that landed past the loop's tail.
+    while (eventIdx < noteEvents.size())
+    {
+        applyHeldNoteEvent (noteEvents.getReference (eventIdx));
+        ++eventIdx;
+    }
+
+    midi.swapWith (pass);
 }
 
 void VaporKeyAudioProcessor::filterMidi (juce::MidiBuffer& midi)
@@ -419,6 +685,11 @@ void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     }
 
     synthParams.bpm.store (currentBpm);
+
+    // Arpeggiator runs first: it consumes incoming note-on/off events and emits
+    // a stepped sequence into the buffer. Mono/legato handling then operates
+    // on whatever notes are flowing through (live or arpeggiated).
+    processArpeggiator (midi, buffer.getNumSamples());
 
     filterMidi (midi);
 
@@ -587,6 +858,15 @@ juce::AudioProcessorEditor* VaporKeyAudioProcessor::createEditor()
 
 void VaporKeyAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
+    // Stash custom wavetable paths into the state tree so they survive saves.
+    for (int i = 0; i < 3; ++i)
+    {
+        const auto id = juce::Identifier ("osc" + juce::String (i + 1) + "_wav");
+        if (customWavPath[i].isNotEmpty())
+            apvts.state.setProperty (id, customWavPath[i], nullptr);
+        else
+            apvts.state.removeProperty (id, nullptr);
+    }
     if (auto xml = apvts.copyState().createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -596,6 +876,21 @@ void VaporKeyAudioProcessor::setStateInformation (const void* data, int sizeInBy
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
     {
         apvts.replaceState (juce::ValueTree::fromXml (*xml));
+
+        // Restore custom wavetables from any stored paths (best-effort: file
+        // may have moved). Only the path strings are persisted; the wavetable
+        // is rebuilt on demand from disk.
+        for (int i = 0; i < 3; ++i)
+        {
+            const auto id = juce::Identifier ("osc" + juce::String (i + 1) + "_wav");
+            const auto path = apvts.state.getProperty (id).toString();
+            customWavPath[i].clear();
+            std::shared_ptr<Wavetable> empty;
+            std::atomic_store (&synthParams.customTables[i], empty);
+            if (path.isNotEmpty())
+                loadCustomWavetable (i, juce::File (path));
+        }
+
         // Host-restored state: we no longer know which named preset this corresponds to.
         currentPresetName = "(unnamed)";
         currentPresetIsFactory = false;
@@ -718,6 +1013,64 @@ juce::StringArray VaporKeyAudioProcessor::factoryPresetNames()
     juce::StringArray names;
     for (const auto& p : VKPresets::all()) names.add (p.name);
     return names;
+}
+
+bool VaporKeyAudioProcessor::loadCustomWavetable (int oscIndex, const juce::File& file)
+{
+    if (oscIndex < 0 || oscIndex >= 3) return false;
+    if (! file.existsAsFile()) return false;
+
+    juce::AudioFormatManager fm;
+    fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (file));
+    if (reader == nullptr || reader->numChannels < 1) return false;
+
+    const int total = (int) juce::jmin ((juce::int64) (Wavetable::kFrameSize * Wavetable::kNumFrames),
+                                         reader->lengthInSamples);
+    if (total <= 0) return false;
+
+    juce::AudioBuffer<float> buf ((int) reader->numChannels, total);
+    if (! reader->read (&buf, 0, total, 0, true, reader->numChannels > 1)) return false;
+
+    // Mix down to mono if needed.
+    std::vector<float> mono ((size_t) total, 0.0f);
+    if (buf.getNumChannels() == 1)
+    {
+        const float* s = buf.getReadPointer (0);
+        for (int i = 0; i < total; ++i) mono[(size_t) i] = s[i];
+    }
+    else
+    {
+        const int ch = buf.getNumChannels();
+        const float invCh = 1.0f / (float) ch;
+        for (int c = 0; c < ch; ++c)
+        {
+            const float* s = buf.getReadPointer (c);
+            for (int i = 0; i < total; ++i) mono[(size_t) i] += s[i] * invCh;
+        }
+    }
+
+    auto newTable = std::make_shared<Wavetable>();
+    newTable->buildFromMonoAudio (mono.data(), total);
+
+    std::atomic_store (&synthParams.customTables[oscIndex], newTable);
+    customWavPath[oscIndex] = file.getFullPathName();
+    return true;
+}
+
+void VaporKeyAudioProcessor::clearCustomWavetable (int oscIndex)
+{
+    if (oscIndex < 0 || oscIndex >= 3) return;
+    std::shared_ptr<Wavetable> empty;
+    std::atomic_store (&synthParams.customTables[oscIndex], empty);
+    customWavPath[oscIndex].clear();
+}
+
+juce::String VaporKeyAudioProcessor::getCustomWavetableName (int oscIndex) const
+{
+    if (oscIndex < 0 || oscIndex >= 3) return {};
+    if (customWavPath[oscIndex].isEmpty()) return {};
+    return juce::File (customWavPath[oscIndex]).getFileNameWithoutExtension();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

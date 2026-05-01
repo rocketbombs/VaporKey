@@ -172,12 +172,89 @@ void VaporToggle::resized() { btn.setBounds (getLocalBounds().reduced (2)); }
 // WavetableDisplay
 // =====================================================================
 
-WavetableDisplay::WavetableDisplay (juce::AudioProcessorValueTreeState& s, int oscIndex)
-    : apvts (s), idx (oscIndex)
+WavetableDisplay::WavetableDisplay (VaporKeyAudioProcessor& proc, int oscIndex)
+    : processor (proc), apvts (proc.apvts), idx (oscIndex)
 {
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
     setOpaque (false);
     startTimerHz (24);
+}
+
+bool WavetableDisplay::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    for (const auto& f : files)
+        if (f.endsWithIgnoreCase (".wav")) return true;
+    return false;
+}
+
+void WavetableDisplay::fileDragEnter (const juce::StringArray&, int, int)
+{
+    dragHover = true;
+    repaint();
+}
+
+void WavetableDisplay::fileDragExit (const juce::StringArray&)
+{
+    dragHover = false;
+    repaint();
+}
+
+void WavetableDisplay::filesDropped (const juce::StringArray& files, int, int)
+{
+    dragHover = false;
+    for (const auto& f : files)
+    {
+        if (! f.endsWithIgnoreCase (".wav")) continue;
+        if (processor.loadCustomWavetable (idx, juce::File (f)))
+        {
+            // Switch the oscillator's shape to Custom so the user hears the file.
+            if (auto* p = apvts.getParameter ("osc" + juce::String (idx + 1) + "_shape"))
+            {
+                const float norm = p->getNormalisableRange().convertTo0to1 ((float) WavetableLibrary::Custom);
+                p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, norm));
+            }
+            break;
+        }
+    }
+    repaint();
+}
+
+void WavetableDisplay::chooseWavFile()
+{
+    chooser = std::make_unique<juce::FileChooser> (
+        "Choose a .wav file for OSC " + juce::String (idx + 1),
+        juce::File::getSpecialLocation (juce::File::userMusicDirectory),
+        "*.wav");
+
+    auto flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+    chooser->launchAsync (flags, [this] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+        if (file == juce::File()) return;
+        if (processor.loadCustomWavetable (idx, file))
+        {
+            if (auto* p = apvts.getParameter ("osc" + juce::String (idx + 1) + "_shape"))
+            {
+                const float norm = p->getNormalisableRange().convertTo0to1 ((float) WavetableLibrary::Custom);
+                p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, norm));
+            }
+        }
+    });
+}
+
+void WavetableDisplay::showLoadMenu()
+{
+    juce::PopupMenu m;
+    m.addItem (1, "Load .wav file...");
+    m.addItem (2, "Clear custom wavetable",
+               processor.getCustomWavetableName (idx).isNotEmpty());
+
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+                     [this] (int r)
+                     {
+                         if (r == 1) chooseWavFile();
+                         else if (r == 2) processor.clearCustomWavetable (idx);
+                     });
 }
 
 void WavetableDisplay::paint (juce::Graphics& g)
@@ -210,7 +287,21 @@ void WavetableDisplay::paint (juce::Graphics& g)
     const int shape = (int) (apvts.getRawParameterValue ("osc" + juce::String (idx + 1) + "_shape")->load() + 0.5f);
     const float pos = apvts.getRawParameterValue ("osc" + juce::String (idx + 1) + "_pos")->load();
 
-    const auto& wt = WavetableLibrary::get().getTable (shape);
+    // For Custom shape, paint from the user-loaded table (atomic snapshot) and
+    // fall back to Basic if no file has been loaded yet.
+    std::shared_ptr<Wavetable> customSnap;
+    const Wavetable* wtPtr = nullptr;
+    if (shape == WavetableLibrary::Custom)
+    {
+        customSnap = std::atomic_load (&processor.synthParams.customTables[idx]);
+        wtPtr = customSnap ? customSnap.get()
+                           : &WavetableLibrary::get().getTable (WavetableLibrary::Basic);
+    }
+    else
+    {
+        wtPtr = &WavetableLibrary::get().getTable (shape);
+    }
+    const auto& wt = *wtPtr;
 
     // Ghost frame: slightly different position to hint at morphing direction.
     const float ghostPos = juce::jlimit (0.0f, 1.0f, pos + 0.07f);
@@ -246,8 +337,14 @@ void WavetableDisplay::paint (juce::Graphics& g)
     // Overlay text: shape name top-left, position % top-right
     g.setColour (Colors::textBright);
     g.setFont (Fonts::label());
-    g.drawText (juce::String (WavetableLibrary::shapeName (shape)).toUpperCase(),
-                (int) r.getX() + 10, (int) r.getY() + 6, 200, 16, juce::Justification::left);
+    juce::String label = juce::String (WavetableLibrary::shapeName (shape)).toUpperCase();
+    if (shape == WavetableLibrary::Custom)
+    {
+        const auto custom = processor.getCustomWavetableName (idx);
+        label = custom.isNotEmpty() ? ("CUSTOM  /  " + custom.toUpperCase()) : "CUSTOM  /  (DROP .WAV)";
+    }
+    g.drawText (label,
+                (int) r.getX() + 10, (int) r.getY() + 6, (int) r.getWidth() - 80, 16, juce::Justification::left);
 
     g.setColour (Colors::neonPink);
     g.drawText (juce::String (juce::roundToInt (pos * 100.0f)) + "%",
@@ -256,9 +353,20 @@ void WavetableDisplay::paint (juce::Graphics& g)
     // Hint text bottom-right
     g.setColour (Colors::textDim);
     g.setFont (Fonts::small());
-    g.drawText ("DRAG TO SCRUB",
-                (int) r.getRight() - 110, (int) r.getBottom() - 18, 100, 14,
+    g.drawText ("DRAG TO SCRUB  /  DROP .WAV  /  RIGHT-CLICK",
+                (int) r.getX() + 10, (int) r.getBottom() - 18, (int) r.getWidth() - 20, 14,
                 juce::Justification::right);
+
+    // Drag-hover highlight overlay
+    if (dragHover)
+    {
+        g.setColour (Colors::neonGreen.withAlpha (0.20f));
+        g.fillRoundedRectangle (r, 6.0f);
+        g.setColour (Colors::neonGreen);
+        g.drawRoundedRectangle (r, 6.0f, 2.5f);
+        g.setFont (Fonts::subheader());
+        g.drawText ("DROP TO LOAD WAVETABLE", r.toNearestInt(), juce::Justification::centred);
+    }
 
     // Position scrub indicator (vertical line)
     const float ix = r.getX() + 4.0f + (r.getWidth() - 8.0f) * pos;
@@ -277,8 +385,16 @@ void WavetableDisplay::setPositionFromMouse (const juce::MouseEvent& e)
     }
 }
 
-void WavetableDisplay::mouseDown (const juce::MouseEvent& e)        { setPositionFromMouse (e); }
-void WavetableDisplay::mouseDrag (const juce::MouseEvent& e)        { setPositionFromMouse (e); }
+void WavetableDisplay::mouseDown (const juce::MouseEvent& e)
+{
+    if (e.mods.isPopupMenu()) { showLoadMenu(); return; }
+    setPositionFromMouse (e);
+}
+void WavetableDisplay::mouseDrag (const juce::MouseEvent& e)
+{
+    if (e.mods.isPopupMenu()) return;
+    setPositionFromMouse (e);
+}
 void WavetableDisplay::mouseDoubleClick (const juce::MouseEvent&)
 {
     if (auto* p = apvts.getParameter ("osc" + juce::String (idx + 1) + "_pos"))
@@ -306,7 +422,7 @@ OscPage::OscPage (VaporKeyAudioProcessor& p) : proc (p)
         const juce::String pf = "osc" + juce::String (i + 1) + "_";
         u.on    = std::make_unique<VaporToggle> (proc.apvts, pf + "on", "ON");      addAndMakeVisible (*u.on);
         u.shape = std::make_unique<VaporCombo>  (proc.apvts, pf + "shape", "Shape", shapes); addAndMakeVisible (*u.shape);
-        u.display = std::make_unique<WavetableDisplay> (proc.apvts, i); addAndMakeVisible (*u.display);
+        u.display = std::make_unique<WavetableDisplay> (proc, i); addAndMakeVisible (*u.display);
         u.position = std::make_unique<VaporKnob> (proc.apvts, pf + "pos",    "Pos");  addAndMakeVisible (*u.position);
         u.level    = std::make_unique<VaporKnob> (proc.apvts, pf + "level",  "Lvl");  addAndMakeVisible (*u.level);
         u.pan      = std::make_unique<VaporKnob> (proc.apvts, pf + "pan",    "Pan");  addAndMakeVisible (*u.pan);
@@ -607,6 +723,71 @@ void ModPage::resized()
         mr.removeFromTop (kSectionTitleH); mr.reduce (10, 8);
         macros[i].dest->setBounds (mr.removeFromTop (50));
         layoutKnobRow (mr, { macros[i].val.get(), macros[i].amt.get() }, 0);
+    }
+}
+
+// =====================================================================
+// ArpPage
+// =====================================================================
+
+ArpPage::ArpPage (VaporKeyAudioProcessor& p)
+{
+    on    = std::make_unique<VaporToggle> (p.apvts, "arp_on",    "ARP ON");      addAndMakeVisible (*on);
+    latch = std::make_unique<VaporToggle> (p.apvts, "arp_latch", "LATCH");       addAndMakeVisible (*latch);
+    mode  = std::make_unique<VaporCombo>  (p.apvts, "arp_mode",  "Mode", ArpMode::names());     addAndMakeVisible (*mode);
+    div   = std::make_unique<VaporCombo>  (p.apvts, "arp_div",   "Rate", syncDivNames());       addAndMakeVisible (*div);
+    octaves = std::make_unique<VaporKnob> (p.apvts, "arp_octaves", "Octaves");   addAndMakeVisible (*octaves);
+    gate    = std::make_unique<VaporKnob> (p.apvts, "arp_gate",    "Gate");      addAndMakeVisible (*gate);
+    swing   = std::make_unique<VaporKnob> (p.apvts, "arp_swing",   "Swing");     addAndMakeVisible (*swing);
+
+    blurb.setText ("Hold a chord to step through it.  Sync follows host tempo.\n"
+                   "MODE picks pattern.  OCTAVES extends range upward.\n"
+                   "GATE sets note length (0.05 - 1.0 of a step).\n"
+                   "SWING delays even-numbered steps for shuffled rhythms.\n"
+                   "LATCH keeps the chord sounding after you release the keys.",
+                   juce::dontSendNotification);
+    blurb.setFont (Fonts::value());
+    blurb.setColour (juce::Label::textColourId, Colors::textDim);
+    blurb.setJustificationType (juce::Justification::topLeft);
+    addAndMakeVisible (blurb);
+}
+
+void ArpPage::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().reduced (10);
+    auto top = r.removeFromTop ((int) (r.getHeight() * 0.62));
+    r.removeFromTop (10);
+    auto bot = r;
+    drawSectionBg (g, top, Colors::neonPink, "ARPEGGIATOR");
+    drawSectionBg (g, bot, Colors::neonCyan, "HOW IT WORKS");
+}
+
+void ArpPage::resized()
+{
+    auto r = getLocalBounds().reduced (10);
+    auto top = r.removeFromTop ((int) (r.getHeight() * 0.62));
+    r.removeFromTop (10);
+    auto bot = r;
+
+    {
+        auto a = top; a.removeFromTop (kSectionTitleH); a.reduce (16, 12);
+
+        auto headerRow = a.removeFromTop (44);
+        on   ->setBounds (headerRow.removeFromLeft (110).reduced (2, 4));
+        headerRow.removeFromLeft (10);
+        latch->setBounds (headerRow.removeFromLeft (110).reduced (2, 4));
+        headerRow.removeFromLeft (16);
+        mode ->setBounds (headerRow.removeFromLeft (juce::jmin (240, headerRow.getWidth() / 2)).reduced (2, 0));
+        headerRow.removeFromLeft (10);
+        div  ->setBounds (headerRow.reduced (2, 0));
+        a.removeFromTop (10);
+
+        layoutKnobRow (a, { octaves.get(), gate.get(), swing.get() }, 0);
+    }
+
+    {
+        auto a = bot; a.removeFromTop (kSectionTitleH); a.reduce (16, 12);
+        blurb.setBounds (a);
     }
 }
 
@@ -1098,6 +1279,7 @@ VaporKeyAudioProcessorEditor::VaporKeyAudioProcessorEditor (VaporKeyAudioProcess
     tabs.addTab ("OSCILLATORS",   Colors::panel, new OscPage (proc),       true);
     tabs.addTab ("FILTER & ENV",  Colors::panel, new FilterEnvPage (proc), true);
     tabs.addTab ("MOD",           Colors::panel, new ModPage (proc),       true);
+    tabs.addTab ("ARP",           Colors::panel, new ArpPage (proc),       true);
     tabs.addTab ("FX",            Colors::panel, new FxPage (proc),        true);
     tabs.addTab ("MASTER",        Colors::panel, new MasterPage (proc),    true);
 

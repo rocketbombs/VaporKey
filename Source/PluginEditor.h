@@ -39,22 +39,38 @@ public:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> attachment;
 };
 
+class VaporKeyAudioProcessor;
+
 // Click-drag-to-scrub wavetable display (drives the position parameter).
-class WavetableDisplay : public juce::Component, private juce::Timer
+// Also accepts .wav files via drag-and-drop or right-click "Load .wav..." to
+// fill the per-oscillator Custom wavetable slot.
+class WavetableDisplay : public juce::Component,
+                         public juce::FileDragAndDropTarget,
+                         private juce::Timer
 {
 public:
-    WavetableDisplay (juce::AudioProcessorValueTreeState& s, int oscIndex);
+    WavetableDisplay (VaporKeyAudioProcessor& proc, int oscIndex);
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseDoubleClick (const juce::MouseEvent& e) override;
 
+    bool isInterestedInFileDrag (const juce::StringArray& files) override;
+    void fileDragEnter (const juce::StringArray&, int, int) override;
+    void fileDragExit  (const juce::StringArray&) override;
+    void filesDropped  (const juce::StringArray& files, int x, int y) override;
+
 private:
     void timerCallback() override { repaint(); }
     void setPositionFromMouse (const juce::MouseEvent& e);
+    void showLoadMenu();
+    void chooseWavFile();
 
+    VaporKeyAudioProcessor& processor;
     juce::AudioProcessorValueTreeState& apvts;
     int idx;
+    bool dragHover = false;
+    std::unique_ptr<juce::FileChooser> chooser;
 };
 
 // ----- Pages -----
@@ -116,6 +132,19 @@ private:
         std::unique_ptr<VaporCombo> dest;
     };
     MacroUI macros[SynthParams::kNumMacros];
+};
+
+class ArpPage : public juce::Component
+{
+public:
+    explicit ArpPage (VaporKeyAudioProcessor& p);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+private:
+    std::unique_ptr<VaporToggle> on, latch;
+    std::unique_ptr<VaporCombo>  mode, div;
+    std::unique_ptr<VaporKnob>   octaves, gate, swing;
+    juce::Label                   blurb;
 };
 
 class FxPage : public juce::Component

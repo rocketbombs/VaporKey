@@ -41,6 +41,36 @@ void Wavetable::buildMipsFromTimeDomain (Frame& out, const std::array<float, kFr
     }
 }
 
+void Wavetable::buildFromMonoAudio (const float* samples, int numSamples)
+{
+    const int avail = juce::jmax (0, numSamples / kFrameSize);
+
+    for (int f = 0; f < kNumFrames; ++f)
+    {
+        std::array<float, kFrameSize> base {};
+
+        if (avail == 0)
+        {
+            const int n = juce::jmin (kFrameSize, numSamples);
+            for (int i = 0; i < n; ++i) base[(size_t) i] = samples[i];
+        }
+        else
+        {
+            const int srcFrame = juce::jmin (f, avail - 1);
+            const float* src = samples + srcFrame * kFrameSize;
+            for (int i = 0; i < kFrameSize; ++i) base[(size_t) i] = src[i];
+        }
+
+        // Per-frame normalize to keep loud frames from dwarfing quiet ones.
+        float peak = 0.0f;
+        for (float v : base) peak = juce::jmax (peak, std::abs (v));
+        if (peak > 1.0e-6f)
+            for (auto& v : base) v /= peak;
+
+        buildMipsFromTimeDomain (frames[(size_t) f], base);
+    }
+}
+
 WavetableLibrary& WavetableLibrary::get()
 {
     static WavetableLibrary inst;
@@ -60,6 +90,7 @@ const char* WavetableLibrary::shapeName (int shape) noexcept
         case Harmonic: return "Harmonic";
         case Glass:    return "Glass";
         case Reso:     return "Reso";
+        case Custom:   return "Custom";
         default:       return "?";
     }
 }

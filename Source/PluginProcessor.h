@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <memory>
 #include "Wavetable.h"
 
 // Modulation destinations addressable by macros.
@@ -42,6 +43,11 @@ namespace NoiseColor { enum { White = 0, Pink, Brown, NumColors };
 
 namespace DistType { enum { Soft = 0, Hard, Fold, Bit, NumTypes };
     inline juce::StringArray names() { return { "Soft", "Hard", "Fold", "Bit" }; }
+}
+
+namespace ArpMode {
+    enum { Up = 0, Down, UpDown, DownUp, AsPlayed, Random, NumModes };
+    inline juce::StringArray names() { return { "Up", "Down", "Up/Down", "Down/Up", "As Played", "Random" }; }
 }
 
 inline juce::StringArray syncDivNames()
@@ -131,6 +137,19 @@ struct SynthParams
     std::atomic<float>* macroDest[kNumMacros] {};
     std::atomic<float>* macroAmt[kNumMacros] {};
 
+    // Arpeggiator
+    std::atomic<float>* arpOn{};
+    std::atomic<float>* arpMode{};
+    std::atomic<float>* arpDiv{};
+    std::atomic<float>* arpOctaves{};
+    std::atomic<float>* arpGate{};
+    std::atomic<float>* arpSwing{};
+    std::atomic<float>* arpLatch{};
+
+    // Per-oscillator user wavetables. Updated atomically from the message thread
+    // (drag-and-drop / file chooser); voices read with std::atomic_load.
+    std::shared_ptr<Wavetable> customTables[3];
+
     // Live MIDI state from processor (per voice reads these atomics).
     std::atomic<float>  pitchBendSemis { 0.0f };
     std::atomic<float>  modWheel { 0.0f };
@@ -179,6 +198,12 @@ public:
     void loadFactoryPreset (int index);
     static juce::StringArray factoryPresetNames();
 
+    // Replace oscillator i's custom wavetable from a .wav file. Thread-safe to
+    // call from the message thread; voices observe the swap atomically.
+    bool loadCustomWavetable (int oscIndex, const juce::File& file);
+    void clearCustomWavetable (int oscIndex);
+    juce::String getCustomWavetableName (int oscIndex) const;
+
     // User presets (read/written under userApplicationDataDirectory/RocketBombs/VaporKey/Presets).
     juce::File        getUserPresetsDir() const;
     juce::StringArray getUserPresetNames() const;
@@ -196,6 +221,7 @@ private:
     void cacheParams();
     void updateMacroSums();
     void filterMidi (juce::MidiBuffer& midi);
+    void processArpeggiator (juce::MidiBuffer& midi, int numSamples);
 
     juce::Synthesiser synth;
 
@@ -215,6 +241,23 @@ private:
 
     // Mono mode helpers
     juce::Array<int> monoHeldNotes;
+
+    // Arpeggiator state. All maintained on the audio thread.
+    struct ArpHeldNote { int note; int velocity; };
+    juce::Array<ArpHeldNote> arpHeld;     // notes physically held by user
+    juce::Array<ArpHeldNote> arpLatched;  // latch buffer (active only when latch is on)
+    bool   arpWasOn         = false;       // detect param transitions
+    bool   arpUpDir         = true;        // direction state for Up/Down + Down/Up
+    int    arpStepIdx       = 0;           // monotonic step counter (cycles pattern)
+    int    arpOctOffset     = 0;           // current octave offset (multiples of 12)
+    double arpSamplesToStep = 0.0;         // samples until next step boundary
+    int    arpSamplesToOff  = -1;          // samples until current note ends (-1 = inactive)
+    int    arpCurrentNote   = -1;          // currently sounding arp note (-1 = none)
+    int    arpCurrentChan   = 1;           // channel of currently sounding note
+    juce::Random arpRng;
+
+    // Custom wavetable file paths (kept in apvts state for persistence).
+    juce::String customWavPath[3];
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VaporKeyAudioProcessor)
 };
