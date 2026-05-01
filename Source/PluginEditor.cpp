@@ -144,8 +144,14 @@ VaporCombo::VaporCombo (juce::AudioProcessorValueTreeState& s, const juce::Strin
 void VaporCombo::resized()
 {
     auto r = getLocalBounds();
-    label.setBounds (r.removeFromTop (18));
-    box.setBounds (r.reduced (4, 4));
+    // Show label only if there's enough vertical room — otherwise give all
+    // of the height to the combo box itself so single-row headers don't
+    // clip the dropdown text.
+    if (r.getHeight() >= 44)
+        label.setBounds (r.removeFromTop (18));
+    else
+        label.setVisible (false);
+    box.setBounds (r.reduced (2, 1));
 }
 
 // =====================================================================
@@ -725,12 +731,15 @@ void FxPage::resized()
 
 int MasterPage::PresetListModel::getNumRows()
 {
-    return VaporKeyAudioProcessor::factoryPresetNames().size();
+    return (int) owner.entries.size();
 }
 
 void MasterPage::PresetListModel::paintListBoxItem (int row, juce::Graphics& g,
                                                     int width, int height, bool selected)
 {
+    if (row < 0 || row >= (int) owner.entries.size()) return;
+    const auto& entry = owner.entries[(size_t) row];
+
     if (selected)
     {
         g.setColour (Colors::neonPink.withAlpha (0.30f));
@@ -744,13 +753,17 @@ void MasterPage::PresetListModel::paintListBoxItem (int row, juce::Graphics& g,
         g.fillRect (0, height - 1, width, 1);
     }
 
-    auto names = VaporKeyAudioProcessor::factoryPresetNames();
-    if (row < 0 || row >= names.size()) return;
+    // Type tag (F / U) on left
+    g.setFont (Fonts::small());
+    g.setColour (entry.isFactory ? Colors::neonCyan.withAlpha (0.85f)
+                                 : Colors::neonAmber.withAlpha (0.85f));
+    g.drawText (entry.isFactory ? "F" : "U", 12, 0, 18, height, juce::Justification::centred);
 
-    g.setColour (selected ? Colors::textBright : Colors::text);
+    // Name
+    g.setColour (selected ? Colors::textBright
+                          : (entry.isFactory ? Colors::text : Colors::neonAmber.brighter (0.4f)));
     g.setFont (Fonts::preset());
-    g.drawText (names[row], 16, 0, width - 32, height,
-                juce::Justification::centredLeft);
+    g.drawText (entry.name, 36, 0, width - 56, height, juce::Justification::centredLeft);
 
     if (selected)
     {
@@ -762,10 +775,157 @@ void MasterPage::PresetListModel::paintListBoxItem (int row, juce::Graphics& g,
 
 void MasterPage::PresetListModel::listBoxItemClicked (int row, const juce::MouseEvent&)
 {
-    owner.proc.loadFactoryPreset (row);
-    owner.presetList.selectRow (row);
-    owner.presetNowLabel.setText (VaporKeyAudioProcessor::factoryPresetNames()[row],
-                                   juce::dontSendNotification);
+    owner.loadEntry (row);
+}
+
+void MasterPage::rebuildEntries()
+{
+    entries.clear();
+    for (const auto& n : VaporKeyAudioProcessor::factoryPresetNames())
+        entries.push_back ({ n, true });
+    for (const auto& n : proc.getUserPresetNames())
+        entries.push_back ({ n, false });
+    presetList.updateContent();
+}
+
+int MasterPage::findEntryIndex (const juce::String& name, bool isFactory) const
+{
+    for (size_t i = 0; i < entries.size(); ++i)
+        if (entries[i].isFactory == isFactory && entries[i].name == name)
+            return (int) i;
+    return -1;
+}
+
+void MasterPage::loadEntry (int idx)
+{
+    if (idx < 0 || idx >= (int) entries.size()) return;
+    const auto& e = entries[(size_t) idx];
+    if (e.isFactory)
+    {
+        // Find factory index
+        const auto names = VaporKeyAudioProcessor::factoryPresetNames();
+        const int fi = names.indexOf (e.name);
+        if (fi >= 0) proc.loadFactoryPreset (fi);
+    }
+    else
+    {
+        proc.loadUserPresetByName (e.name);
+    }
+    presetList.selectRow (idx);
+    refreshNowPlaying();
+    nameField.setText (e.isFactory ? juce::String() : e.name, juce::dontSendNotification);
+}
+
+void MasterPage::refreshNowPlaying()
+{
+    const juce::String name = proc.currentPresetName.isNotEmpty()
+                                ? proc.currentPresetName
+                                : juce::String ("(unnamed)");
+    presetNowLabel.setText (name, juce::dontSendNotification);
+    const int idx = findEntryIndex (proc.currentPresetName, proc.currentPresetIsFactory);
+    if (idx >= 0) presetList.selectRow (idx, false, true);
+}
+
+void MasterPage::stepPreset (int dir)
+{
+    const int n = (int) entries.size();
+    if (n == 0) return;
+    int cur = juce::jmax (0, presetList.getSelectedRow());
+    cur = (cur + dir + n) % n;
+    loadEntry (cur);
+}
+
+void MasterPage::showStatus (const juce::String& msg, juce::Colour col)
+{
+    presetLabel.setText (msg, juce::dontSendNotification);
+    presetLabel.setColour (juce::Label::textColourId, col);
+    juce::Component::SafePointer<MasterPage> sp (this);
+    juce::Timer::callAfterDelay (1800, [sp]
+    {
+        if (auto* p = sp.getComponent())
+        {
+            p->presetLabel.setText ("PRESETS", juce::dontSendNotification);
+            p->presetLabel.setColour (juce::Label::textColourId, Colors::neonPink);
+        }
+    });
+}
+
+void MasterPage::onSave()
+{
+    auto name = nameField.getText().trim();
+    if (name.isEmpty())
+    {
+        // Auto-name with a number suffix
+        int n = 1;
+        for (;; ++n)
+        {
+            auto candidate = "User Preset " + juce::String (n);
+            if (! proc.getUserPresetNames().contains (candidate))
+            {
+                name = candidate;
+                break;
+            }
+        }
+    }
+    if (proc.saveUserPreset (name))
+    {
+        rebuildEntries();
+        const int idx = findEntryIndex (proc.currentPresetName, false);
+        if (idx >= 0) presetList.selectRow (idx);
+        refreshNowPlaying();
+        nameField.setText (name, juce::dontSendNotification);
+        showStatus ("SAVED  -  " + name.toUpperCase(), Colors::neonGreen);
+    }
+    else
+    {
+        showStatus ("SAVE FAILED", Colors::neonAmber);
+    }
+}
+
+void MasterPage::onRename()
+{
+    const int row = presetList.getSelectedRow();
+    if (row < 0 || row >= (int) entries.size()) { showStatus ("SELECT A PRESET", Colors::neonAmber); return; }
+    const auto& e = entries[(size_t) row];
+    if (e.isFactory) { showStatus ("CANNOT RENAME FACTORY", Colors::neonAmber); return; }
+
+    const auto newName = nameField.getText().trim();
+    if (newName.isEmpty()) { showStatus ("ENTER A NEW NAME", Colors::neonAmber); return; }
+
+    if (proc.renameUserPreset (e.name, newName))
+    {
+        rebuildEntries();
+        const int idx = findEntryIndex (newName, false);
+        if (idx >= 0) presetList.selectRow (idx);
+        refreshNowPlaying();
+        showStatus ("RENAMED", Colors::neonGreen);
+    }
+    else
+    {
+        showStatus ("RENAME FAILED", Colors::neonAmber);
+    }
+}
+
+void MasterPage::onDelete()
+{
+    const int row = presetList.getSelectedRow();
+    if (row < 0 || row >= (int) entries.size()) { showStatus ("SELECT A PRESET", Colors::neonAmber); return; }
+    const auto& e = entries[(size_t) row];
+    if (e.isFactory) { showStatus ("CANNOT DELETE FACTORY", Colors::neonAmber); return; }
+
+    const auto deletedName = e.name;
+    if (proc.deleteUserPreset (deletedName))
+    {
+        rebuildEntries();
+        if (proc.currentPresetName == deletedName)
+            presetNowLabel.setText ("(unnamed)", juce::dontSendNotification);
+        nameField.setText ({}, juce::dontSendNotification);
+        showStatus ("DELETED", Colors::neonGreen);
+    }
+    else
+    {
+        showStatus ("DELETE FAILED", Colors::neonAmber);
+    }
 }
 
 MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
@@ -779,8 +939,13 @@ MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
     presetLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (presetLabel);
 
-    presetNowLabel.setText (VaporKeyAudioProcessor::factoryPresetNames()[proc.getCurrentProgram()],
-                            juce::dontSendNotification);
+    // Initialize current name from program
+    if (proc.currentPresetName.isEmpty())
+    {
+        proc.currentPresetName = VaporKeyAudioProcessor::factoryPresetNames()[proc.getCurrentProgram()];
+        proc.currentPresetIsFactory = true;
+    }
+    presetNowLabel.setText (proc.currentPresetName, juce::dontSendNotification);
     presetNowLabel.setFont (Fonts::header());
     presetNowLabel.setColour (juce::Label::textColourId, Colors::neonCyan);
     presetNowLabel.setJustificationType (juce::Justification::centredLeft);
@@ -792,23 +957,42 @@ MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
     presetList.setColour (juce::ListBox::backgroundColourId, Colors::bg.darker (0.2f));
     presetList.setColour (juce::ListBox::outlineColourId,    Colors::neonCyan.withAlpha (0.45f));
     presetList.setOutlineThickness (1);
-    presetList.selectRow (proc.getCurrentProgram());
     addAndMakeVisible (presetList);
 
-    auto stepPreset = [this] (int dir)
+    rebuildEntries();
     {
-        const int n = VaporKeyAudioProcessor::factoryPresetNames().size();
-        if (n == 0) return;
-        int cur = juce::jmax (0, presetList.getSelectedRow());
-        cur = (cur + dir + n) % n;
-        presetList.selectRow (cur);
-        proc.loadFactoryPreset (cur);
-        presetNowLabel.setText (VaporKeyAudioProcessor::factoryPresetNames()[cur], juce::dontSendNotification);
-    };
-    prevBtn.onClick = [stepPreset] { stepPreset (-1); };
-    nextBtn.onClick = [stepPreset] { stepPreset (+1); };
+        const int idx = findEntryIndex (proc.currentPresetName, proc.currentPresetIsFactory);
+        if (idx >= 0) presetList.selectRow (idx);
+    }
+
+    prevBtn.onClick = [this] { stepPreset (-1); };
+    nextBtn.onClick = [this] { stepPreset (+1); };
     addAndMakeVisible (prevBtn);
     addAndMakeVisible (nextBtn);
+
+    nameLabel.setText ("NAME", juce::dontSendNotification);
+    nameLabel.setFont (Fonts::section());
+    nameLabel.setColour (juce::Label::textColourId, Colors::neonCyan);
+    nameLabel.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (nameLabel);
+
+    nameField.setFont (Fonts::preset());
+    nameField.setColour (juce::TextEditor::backgroundColourId, Colors::panelHi2);
+    nameField.setColour (juce::TextEditor::textColourId, Colors::textBright);
+    nameField.setColour (juce::TextEditor::outlineColourId, Colors::neonCyan.withAlpha (0.5f));
+    nameField.setColour (juce::TextEditor::focusedOutlineColourId, Colors::neonPink);
+    nameField.setColour (juce::TextEditor::highlightColourId, Colors::neonPink.withAlpha (0.35f));
+    nameField.setTextToShowWhenEmpty ("Type a name and SAVE", Colors::textDim);
+    nameField.setIndents (8, 4);
+    nameField.onReturnKey = [this] { onSave(); };
+    addAndMakeVisible (nameField);
+
+    saveBtn.onClick   = [this] { onSave(); };
+    renameBtn.onClick = [this] { onRename(); };
+    deleteBtn.onClick = [this] { onDelete(); };
+    addAndMakeVisible (saveBtn);
+    addAndMakeVisible (renameBtn);
+    addAndMakeVisible (deleteBtn);
 
     brand.setText ("VAPORKEY", juce::dontSendNotification);
     brand.setFont (Fonts::header());
@@ -822,10 +1006,10 @@ MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
     tagline.setJustificationType (juce::Justification::topLeft);
     addAndMakeVisible (tagline);
 
-    copy.setText ("v0.3   /   3 wavetable osc + sub + noise   /   16-voice poly\n"
+    copy.setText ("v0.4   /   3 wavetable osc + sub + noise   /   16-voice poly\n"
                   "ADSR amp/mod, pitch env, 2 LFOs, 4 macros\n"
                   "Distortion, Chorus, Phaser, EQ, Delay, Reverb, Comp\n"
-                  "Grit / Vibe / Drift / Sat\n"
+                  "Grit / Vibe / Drift / Sat   -   user presets supported\n"
                   "Built with JUCE.   /   RocketBombs",
                   juce::dontSendNotification);
     copy.setFont (Fonts::value());
@@ -851,18 +1035,35 @@ void MasterPage::resized()
     juce::Rectangle<int> sLeft  (r.getX(),                  r.getY(), leftW - 5,             r.getHeight());
     juce::Rectangle<int> sRight (r.getX() + leftW + 5,      r.getY(), r.getWidth() - leftW - 5, r.getHeight());
 
-    // Left: presets
+    // Left: presets + name field + save/rename/delete
     {
         auto a = sLeft; a.removeFromTop (kSectionTitleH); a.reduce (16, 12);
+
         presetLabel.setBounds (a.removeFromTop (18));
-        presetNowLabel.setBounds (a.removeFromTop (40));
         a.removeFromTop (4);
-        auto btnRow = a.removeFromTop (36);
+        presetNowLabel.setBounds (a.removeFromTop (40));
+        a.removeFromTop (6);
+
+        auto btnRow = a.removeFromTop (32);
         prevBtn.setBounds (btnRow.removeFromLeft (110));
         btnRow.removeFromLeft (8);
         nextBtn.setBounds (btnRow.removeFromLeft (110));
-        a.removeFromTop (10);
+        a.removeFromTop (8);
+
+        // Reserve space for name + save/rename/delete row at the bottom (so list grows to fill).
+        const int controlsH = 24 /*name label*/ + 32 /*field*/ + 8 + 32 /*buttons*/;
+        auto bottom = a.removeFromBottom (controlsH);
+
         presetList.setBounds (a);
+
+        nameLabel.setBounds (bottom.removeFromTop (24));
+        nameField.setBounds (bottom.removeFromTop (32));
+        bottom.removeFromTop (8);
+        auto br = bottom.removeFromTop (32);
+        const int bw = (br.getWidth() - 16) / 3;
+        saveBtn  .setBounds (br.removeFromLeft (bw)); br.removeFromLeft (8);
+        renameBtn.setBounds (br.removeFromLeft (bw)); br.removeFromLeft (8);
+        deleteBtn.setBounds (br.removeFromLeft (bw));
     }
 
     // Right: master + about
@@ -872,8 +1073,8 @@ void MasterPage::resized()
         tagline.setBounds (a.removeFromTop (22));
         a.removeFromTop (10);
 
-        auto knobRow = a.removeFromTop (130);
-        const int kw = juce::jmin (160, knobRow.getWidth() / 2);
+        auto knobRow = a.removeFromTop (140);
+        const int kw = juce::jmin (170, knobRow.getWidth() / 2);
         gain ->setBounds (knobRow.removeFromLeft (kw));
         knobRow.removeFromLeft (8);
         width->setBounds (knobRow.removeFromLeft (kw));

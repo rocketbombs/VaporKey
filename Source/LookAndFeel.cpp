@@ -230,6 +230,22 @@ void VaporLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectang
     }
 }
 
+void VaporLookAndFeel::getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator,
+                                                  int standardMenuItemHeight,
+                                                  int& idealWidth, int& idealHeight)
+{
+    if (isSeparator)
+    {
+        idealWidth  = 50;
+        idealHeight = standardMenuItemHeight > 0 ? standardMenuItemHeight / 2 : 8;
+        return;
+    }
+
+    // Comfortable, never-clip row height tuned for our 13pt bold combo font.
+    idealHeight = juce::jmax (28, standardMenuItemHeight);
+    idealWidth  = (int) std::ceil ((float) text.length() * 10.0f) + 48;
+}
+
 // ----- Buttons / toggles -----
 
 void VaporLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b,

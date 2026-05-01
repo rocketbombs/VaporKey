@@ -144,12 +144,23 @@ public:
     explicit MasterPage (VaporKeyAudioProcessor& p);
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    // Combined factory + user preset listing.
+    struct PresetEntry { juce::String name; bool isFactory; };
+    std::vector<PresetEntry> entries;
+    void rebuildEntries();
+    int  findEntryIndex (const juce::String& name, bool isFactory) const;
+    void loadEntry (int index);
+    void refreshNowPlaying();
+
 private:
     VaporKeyAudioProcessor& proc;
     std::unique_ptr<VaporKnob> gain, width;
     juce::ListBox presetList;
     juce::TextButton prevBtn { "<  PREV" }, nextBtn { "NEXT  >" };
-    juce::Label presetLabel, presetNowLabel, brand, tagline, copy;
+    juce::TextButton saveBtn { "SAVE" }, renameBtn { "RENAME" }, deleteBtn { "DELETE" };
+    juce::TextEditor nameField;
+    juce::Label presetLabel, presetNowLabel, nameLabel, brand, tagline, copy;
 
     class PresetListModel : public juce::ListBoxModel
     {
@@ -162,6 +173,12 @@ private:
         MasterPage& owner;
     };
     std::unique_ptr<PresetListModel> presetModel;
+
+    void onSave();
+    void onRename();
+    void onDelete();
+    void stepPreset (int dir);
+    void showStatus (const juce::String& msg, juce::Colour col);
 };
 
 // Top-level editor with TabbedComponent

@@ -176,6 +176,18 @@ public:
     void loadFactoryPreset (int index);
     static juce::StringArray factoryPresetNames();
 
+    // User presets (read/written under userApplicationDataDirectory/RocketBombs/VaporKey/Presets).
+    juce::File        getUserPresetsDir() const;
+    juce::StringArray getUserPresetNames() const;
+    bool              saveUserPreset (const juce::String& name);
+    bool              loadUserPresetByName (const juce::String& name);
+    bool              deleteUserPreset (const juce::String& name);
+    bool              renameUserPreset (const juce::String& oldName, const juce::String& newName);
+
+    // Most recently selected preset (for highlight in UI). "" if none.
+    juce::String currentPresetName;
+    bool         currentPresetIsFactory = true;
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void cacheParams();

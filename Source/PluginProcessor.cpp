@@ -605,7 +605,12 @@ void VaporKeyAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 void VaporKeyAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
+    {
         apvts.replaceState (juce::ValueTree::fromXml (*xml));
+        // Host-restored state: we no longer know which named preset this corresponds to.
+        currentPresetName = "(unnamed)";
+        currentPresetIsFactory = false;
+    }
 }
 
 int VaporKeyAudioProcessor::getNumPrograms() { return (int) VKPresets::all().size(); }
@@ -642,6 +647,81 @@ void VaporKeyAudioProcessor::loadFactoryPreset (int index)
             p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, norm));
         }
     }
+
+    currentPresetName = juce::String (list[(size_t) index].name);
+    currentPresetIsFactory = true;
+}
+
+juce::File VaporKeyAudioProcessor::getUserPresetsDir() const
+{
+    auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                   .getChildFile ("RocketBombs")
+                   .getChildFile ("VaporKey")
+                   .getChildFile ("Presets");
+    if (! dir.exists()) dir.createDirectory();
+    return dir;
+}
+
+juce::StringArray VaporKeyAudioProcessor::getUserPresetNames() const
+{
+    juce::StringArray names;
+    auto dir = getUserPresetsDir();
+    auto files = dir.findChildFiles (juce::File::findFiles, false, "*.vkpreset");
+    for (auto& f : files) names.add (f.getFileNameWithoutExtension());
+    names.sort (false);
+    return names;
+}
+
+bool VaporKeyAudioProcessor::saveUserPreset (const juce::String& name)
+{
+    auto safeName = juce::File::createLegalFileName (name).trim();
+    if (safeName.isEmpty()) return false;
+    auto file = getUserPresetsDir().getChildFile (safeName + ".vkpreset");
+    if (auto xml = apvts.copyState().createXml())
+    {
+        if (! xml->writeTo (file)) return false;
+        currentPresetName = safeName;
+        currentPresetIsFactory = false;
+        return true;
+    }
+    return false;
+}
+
+bool VaporKeyAudioProcessor::loadUserPresetByName (const juce::String& name)
+{
+    auto file = getUserPresetsDir().getChildFile (name + ".vkpreset");
+    if (! file.existsAsFile()) return false;
+    if (auto xml = juce::XmlDocument::parse (file))
+    {
+        apvts.replaceState (juce::ValueTree::fromXml (*xml));
+        currentPresetName = name;
+        currentPresetIsFactory = false;
+        return true;
+    }
+    return false;
+}
+
+bool VaporKeyAudioProcessor::deleteUserPreset (const juce::String& name)
+{
+    auto file = getUserPresetsDir().getChildFile (name + ".vkpreset");
+    if (! file.existsAsFile()) return false;
+    const bool ok = file.deleteFile();
+    if (ok && currentPresetName == name && ! currentPresetIsFactory)
+        currentPresetName.clear();
+    return ok;
+}
+
+bool VaporKeyAudioProcessor::renameUserPreset (const juce::String& oldName, const juce::String& newName)
+{
+    auto safeNew = juce::File::createLegalFileName (newName).trim();
+    if (safeNew.isEmpty() || safeNew == oldName) return false;
+    auto src = getUserPresetsDir().getChildFile (oldName + ".vkpreset");
+    auto dst = getUserPresetsDir().getChildFile (safeNew + ".vkpreset");
+    if (! src.existsAsFile() || dst.existsAsFile()) return false;
+    if (! src.moveFileTo (dst)) return false;
+    if (currentPresetName == oldName && ! currentPresetIsFactory)
+        currentPresetName = safeNew;
+    return true;
 }
 
 juce::StringArray VaporKeyAudioProcessor::factoryPresetNames()
