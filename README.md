@@ -1,8 +1,14 @@
 # VaporKey
 
+[![Build VaporKey](https://github.com/rocketbombs/vaporkey/actions/workflows/build.yml/badge.svg)](https://github.com/rocketbombs/vaporkey/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#installing)
+
 A CPU-efficient wavetable synthesizer VST3 built with JUCE, designed for vaporwave and synthwave production. VaporKey combines clean band-limited oscillators with a dedicated "analog warmth" section and a full FX chain — all wrapped in a neon-lit aesthetic with a perspective grid, scan-lined sun, and glowing knobs.
 
 Targeted at FL Studio and other VST3 hosts on Windows, macOS, and Linux.
+
+> **Highlights** — 3 wavetable oscillators with mip-mapped band-limiting, sub + noise, state-variable filter, two ADSRs + decay-only pitch envelope, two LFOs (free or tempo-synced), four assignable macros, tempo-synced arpeggiator, drag-and-drop custom `.wav` wavetables, full FX chain, and **57 factory presets** in 8 browsable categories.
 
 ---
 
@@ -127,6 +133,32 @@ A four-knob section that adds organic imperfection to the sound:
 
 ---
 
+### Arpeggiator
+
+A built-in tempo-synced arpeggiator sits in front of the synth voice. Held notes are intercepted and replayed as a stepped sequence; CCs, pitch bend, and aftertouch pass through untouched.
+
+- **Mode** — Up, Down, Up/Down, Down/Up, As Played, or Random
+- **Rate** — host-synced division (1/32 through 2/1, including 1/4D)
+- **Octaves** — 1–4 octaves of range
+- **Gate** — note length per step (5%–100% of the step time)
+- **Swing** — 0–50% offset on every other step
+- **Latch** — held notes stay armed after release; pressing a new chord replaces the latch buffer
+
+The arpeggiator follows the host transport, so step timing locks to the project tempo and stays aligned across loops and tempo changes.
+
+---
+
+### Custom Wavetables
+
+Any oscillator can load a user `.wav` file as its wavetable in addition to the nine factory banks.
+
+- **Drag a `.wav` file** onto the wavetable display in the Oscillator page, or
+- **Right-click the display** and choose *Load .wav file…* to browse
+
+The audio is sliced into 8 frames, mip-mapped to 10 octave levels (2048 samples per frame) for alias-free playback, and selectable per oscillator alongside the factory shapes. Right-click → *Clear custom wavetable* reverts to factory shapes. Custom wavetables are stored inside the patch state, so saved presets and host sessions reload them automatically.
+
+---
+
 ### FX Chain
 
 The post-synthesis FX chain runs in this order:
@@ -144,22 +176,20 @@ The post-synthesis FX chain runs in this order:
 
 ### Presets
 
-Ten factory presets ship with VaporKey:
+VaporKey ships with **57 factory presets** organised into eight browsable categories. The preset browser lets you filter by category and step through patches with prev/next arrows.
 
-| Preset | Description |
-|--------|-------------|
-| Init | Clean single-oscillator starting point |
-| Vapor Lead | Detuned dual-osc lead with filter envelope and delay |
-| Synthwave Pad | Three-oscillator lush pad with slow attack and heavy reverb |
-| Neon Bass | Tight bass with sub oscillator and driven filter |
-| Pluck | Short-attack pluck with pitch envelope pop |
-| Glass Bell | Inharmonic bell with long decay and shimmer reverb |
-| Aggro Lead | Distorted, wide seven-voice lead with phaser |
-| Wobble | LFO-driven wub bass with sub oscillator |
-| Vapor Keys | Clean electric-piano-style keys with chorus and delay |
-| Hover Drone | Evolving, fully detuned ambient drone |
+| Category | Count | Highlights |
+|----------|------:|------------|
+| **Bass** | 8 | Neon Bass, Sub Hammer, Reese Bass, Acid 303, Glide Bass, FM Bass, Pulse Bass, Wobble |
+| **Lead** | 9 | Vapor Lead, Aggro Lead, Sawtooth Hero, Square Wave, Vintage Mono, Resonant Lead, Octave Lead, Bright Lead, Pulse Lead |
+| **Pad** | 8 | Synthwave Pad, Strings Pad, Choir Pad, Warm Pad, Glass Pad, Lush Pad, Sweep Pad, Soft Pad |
+| **Pluck** | 7 | Pluck, Clean Pluck, FM Pluck, Wood Pluck, Bell Pluck, Soft Pluck, Sharp Pluck |
+| **Keys** | 7 + Init | Vapor Keys, Electric Keys, Vintage Stack, Soft Rhodes, Bright Keys, Pure Sine, Mellow Keys |
+| **Bell** | 5 | Glass Bell, Crystal Bell, Toy Bell, Tine Bell, Music Box |
+| **FX** | 6 | Hover Drone, Riser, Atmosphere, Texture, Whoosh, Sci-Fi Sweep |
+| **Arp** | 6 | Arp Stab, Arp Sequence, Arp Pluck, Arp Bass, Arp Pad, Arp Random |
 
-In addition to factory presets, VaporKey supports **user presets** that are saved to and loaded from your system's user application data directory (`RocketBombs/VaporKey/Presets`). User presets can be saved, renamed, and deleted from within the plugin UI.
+**User presets** save to your system's user application data directory (`RocketBombs/VaporKey/Presets`) and can be saved, renamed, and deleted from within the plugin UI. User presets are listed alongside the factory library in the browser.
 
 ---
 
@@ -209,14 +239,22 @@ Every push to `main` or `claude/**` branches triggers builds on all three platfo
 
 ---
 
-## Installing in FL Studio (Windows)
+## Installing
 
-1. Download `VaporKey-Windows-VST3` from the latest GitHub Actions run.
-2. Copy `VaporKey.vst3` into `C:\Program Files\Common Files\VST3\` (or any folder FL Studio scans).
-3. In FL Studio: **Options → Manage plugins → Find more plugins**. VaporKey appears under *Generators*.
+Download the VST3 for your platform from the latest [GitHub Actions run](https://github.com/rocketbombs/vaporkey/actions) (or build from source) and copy `VaporKey.vst3` into the standard VST3 location:
+
+| Platform | VST3 path |
+|----------|-----------|
+| Windows  | `C:\Program Files\Common Files\VST3\` |
+| macOS    | `~/Library/Audio/Plug-Ins/VST3/` (user) or `/Library/Audio/Plug-Ins/VST3/` (system) |
+| Linux    | `~/.vst3/` (user) or `/usr/lib/vst3/` (system) |
+
+Then rescan plugins in your DAW. In FL Studio: **Options → Manage plugins → Find more plugins**; VaporKey appears under *Generators*. In Ableton, Reaper, Bitwig, Cubase, etc., trigger a plugin rescan from the preferences/settings.
 
 ---
 
 ## License
 
-MIT — see source file headers.
+VaporKey is released under the [MIT License](LICENSE).
+
+JUCE is fetched at configure time and is licensed separately under JUCE's own dual-license terms (see [juce.com/get-juce](https://juce.com/get-juce/)). Distributing a binary built with JUCE is your responsibility under JUCE's license.

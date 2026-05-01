@@ -1275,10 +1275,10 @@ MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
     tagline.setJustificationType (juce::Justification::topLeft);
     addAndMakeVisible (tagline);
 
-    copy.setText ("v0.4   /   3 wavetable osc + sub + noise   /   16-voice poly\n"
-                  "ADSR amp/mod, pitch env, 2 LFOs, 4 macros\n"
+    copy.setText ("v1.0   /   3 wavetable osc + sub + noise   /   16-voice poly\n"
+                  "ADSR amp/mod, pitch env, 2 LFOs, 4 macros, arpeggiator\n"
                   "Distortion, Chorus, Phaser, EQ, Delay, Reverb, Comp\n"
-                  "Grit / Vibe / Drift / Sat   -   user presets supported\n"
+                  "Grit / Vibe / Drift / Sat   -   user presets + custom .wav\n"
                   "Built with JUCE.   /   RocketBombs",
                   juce::dontSendNotification);
     copy.setFont (Fonts::value());
