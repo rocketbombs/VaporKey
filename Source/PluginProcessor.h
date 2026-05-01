@@ -2,55 +2,142 @@
 #include <JuceHeader.h>
 #include "Wavetable.h"
 
-// Centralised parameter access (read by voices, written by APVTS).
+// Modulation destinations addressable by macros.
+namespace ModDest {
+    enum Dest {
+        None = 0,
+        Cutoff,
+        Reso,
+        Osc1Pos, Osc2Pos, Osc3Pos,
+        Osc1Lvl, Osc2Lvl, Osc3Lvl,
+        Osc1Det, Osc2Det, Osc3Det,
+        Lfo1Rate, Lfo2Rate,
+        DelayMix, ReverbMix, ChorusMix, PhaserMix,
+        DistDrive, Width,
+        NumDests
+    };
+    inline juce::StringArray names()
+    {
+        return { "Off", "Cutoff", "Resonance",
+                 "Osc1 Pos", "Osc2 Pos", "Osc3 Pos",
+                 "Osc1 Lvl", "Osc2 Lvl", "Osc3 Lvl",
+                 "Osc1 Det", "Osc2 Det", "Osc3 Det",
+                 "LFO1 Rate", "LFO2 Rate",
+                 "Delay Mix", "Reverb Mix", "Chorus Mix", "Phaser Mix",
+                 "Dist Drive", "Width" };
+    }
+}
+
+namespace LfoShape { enum { Sine = 0, Tri, SawUp, SawDown, Square, SH, NumShapes };
+    inline juce::StringArray names() { return { "Sine", "Tri", "Saw+", "Saw-", "Square", "S&H" }; }
+}
+
+namespace SubShape { enum { Sine = 0, Square, Tri, NumShapes };
+    inline juce::StringArray names() { return { "Sine", "Square", "Tri" }; }
+}
+
+namespace NoiseColor { enum { White = 0, Pink, Brown, NumColors };
+    inline juce::StringArray names() { return { "White", "Pink", "Brown" }; }
+}
+
+namespace DistType { enum { Soft = 0, Hard, Fold, Bit, NumTypes };
+    inline juce::StringArray names() { return { "Soft", "Hard", "Fold", "Bit" }; }
+}
+
+inline juce::StringArray syncDivNames()
+{
+    return { "1/32", "1/16", "1/8", "1/4D", "1/4", "1/2", "1/1", "2/1" };
+}
+inline double syncDivToBeats (int idx)
+{
+    static const double v[] = { 0.125, 0.25, 0.5, 0.75, 1.0, 2.0, 4.0, 8.0 };
+    return v[juce::jlimit (0, 7, idx)];
+}
+
 struct SynthParams
 {
-    // Per-oscillator
     struct OscP {
-        std::atomic<float>* on        = nullptr; // 0/1
-        std::atomic<float>* shape     = nullptr; // 0..NumShapes-1
-        std::atomic<float>* position  = nullptr; // 0..1
-        std::atomic<float>* level     = nullptr; // dB
-        std::atomic<float>* pan       = nullptr; // -1..1
-        std::atomic<float>* coarse    = nullptr; // semis
-        std::atomic<float>* fine      = nullptr; // cents
-        std::atomic<float>* unison    = nullptr; // 1..7
-        std::atomic<float>* detune    = nullptr; // 0..1
+        std::atomic<float>* on{};
+        std::atomic<float>* shape{};
+        std::atomic<float>* position{};
+        std::atomic<float>* level{};
+        std::atomic<float>* pan{};
+        std::atomic<float>* coarse{};
+        std::atomic<float>* fine{};
+        std::atomic<float>* unison{};
+        std::atomic<float>* detune{};
+        std::atomic<float>* phase{}; // start phase 0..1, -1 = free
     };
     OscP osc[3];
 
+    // Sub osc
+    std::atomic<float>* subOn{};
+    std::atomic<float>* subShape{};
+    std::atomic<float>* subOct{}; // -1 or -2
+    std::atomic<float>* subLevel{};
+
+    // Noise
+    std::atomic<float>* noiseOn{};
+    std::atomic<float>* noiseColor{};
+    std::atomic<float>* noiseLevel{};
+
     // Filter
-    std::atomic<float>* fCut   = nullptr;
-    std::atomic<float>* fRes   = nullptr;
-    std::atomic<float>* fEnv   = nullptr; // mod env -> cutoff
-    std::atomic<float>* fType  = nullptr; // 0=LP, 1=BP, 2=HP
+    std::atomic<float>* fCut{}; std::atomic<float>* fRes{};
+    std::atomic<float>* fEnv{}; std::atomic<float>* fType{};
+    std::atomic<float>* fDrive{}; std::atomic<float>* fKey{}; // key tracking 0..1
 
     // Envelopes
-    std::atomic<float>* aA = nullptr; std::atomic<float>* aD = nullptr;
-    std::atomic<float>* aS = nullptr; std::atomic<float>* aR = nullptr;
-    std::atomic<float>* mA = nullptr; std::atomic<float>* mD = nullptr;
-    std::atomic<float>* mS = nullptr; std::atomic<float>* mR = nullptr;
+    std::atomic<float>* aA{}; std::atomic<float>* aD{}; std::atomic<float>* aS{}; std::atomic<float>* aR{};
+    std::atomic<float>* mA{}; std::atomic<float>* mD{}; std::atomic<float>* mS{}; std::atomic<float>* mR{};
+    std::atomic<float>* aVel{}; // amp velocity sense 0..1
+    std::atomic<float>* fVel{}; // filter env velocity sense 0..1
 
-    // LFO
-    std::atomic<float>* lfo1Rate = nullptr; std::atomic<float>* lfo1Amt = nullptr;
-    std::atomic<float>* lfo2Rate = nullptr; std::atomic<float>* lfo2Amt = nullptr; // -> wt position
+    // Pitch envelope (decay only)
+    std::atomic<float>* pEnvAmt{}; // semis -24..24
+    std::atomic<float>* pEnvDecay{}; // sec
+
+    // LFOs
+    std::atomic<float>* lfo1Shape{}; std::atomic<float>* lfo1Rate{}; std::atomic<float>* lfo1Amt{};
+    std::atomic<float>* lfo1Sync{};  std::atomic<float>* lfo1Div{};
+    std::atomic<float>* lfo2Shape{}; std::atomic<float>* lfo2Rate{}; std::atomic<float>* lfo2Amt{};
+    std::atomic<float>* lfo2Sync{};  std::atomic<float>* lfo2Div{};
+
+    // Glide / mono
+    std::atomic<float>* glide{};   // 0..2 sec
+    std::atomic<float>* mono{};    // 0/1
+    std::atomic<float>* legato{};  // 0/1
+    std::atomic<float>* bendRange{}; // semis 1..24
 
     // Analog warmth
-    std::atomic<float>* grit  = nullptr; // 0..1 phase jitter amount
-    std::atomic<float>* vibe  = nullptr; // 0..1 background noise
-    std::atomic<float>* drift = nullptr; // 0..1 slow pitch drift
-    std::atomic<float>* sat   = nullptr; // 0..1 soft saturation
+    std::atomic<float>* grit{}; std::atomic<float>* vibe{};
+    std::atomic<float>* drift{}; std::atomic<float>* sat{};
 
     // FX
-    std::atomic<float>* chorus = nullptr;
-    std::atomic<float>* delay  = nullptr;
-    std::atomic<float>* delayTime = nullptr; // seconds
-    std::atomic<float>* delayFb   = nullptr;
-    std::atomic<float>* reverb    = nullptr;
+    std::atomic<float>* distDrive{}; std::atomic<float>* distMix{}; std::atomic<float>* distType{};
+    std::atomic<float>* chorus{}; std::atomic<float>* chorusRate{}; std::atomic<float>* chorusDepth{};
+    std::atomic<float>* phaser{}; std::atomic<float>* phaserRate{}; std::atomic<float>* phaserDepth{}; std::atomic<float>* phaserFb{};
+    std::atomic<float>* eqLow{}; std::atomic<float>* eqMid{}; std::atomic<float>* eqMidF{}; std::atomic<float>* eqHigh{};
+    std::atomic<float>* delay{}; std::atomic<float>* delayTime{}; std::atomic<float>* delayFb{};
+    std::atomic<float>* delaySync{}; std::atomic<float>* delayDiv{};
+    std::atomic<float>* reverb{}; std::atomic<float>* reverbSize{}; std::atomic<float>* reverbDamp{};
+    std::atomic<float>* compThr{}; std::atomic<float>* compRatio{}; std::atomic<float>* compAtk{}; std::atomic<float>* compRel{}; std::atomic<float>* compMakeup{}; std::atomic<float>* compOn{};
 
     // Master
-    std::atomic<float>* gain   = nullptr; // dB
-    std::atomic<float>* glide  = nullptr; // unused for now
+    std::atomic<float>* gain{}; std::atomic<float>* width{};
+
+    // Macros
+    static constexpr int kNumMacros = 4;
+    std::atomic<float>* macroVal[kNumMacros] {};
+    std::atomic<float>* macroDest[kNumMacros] {};
+    std::atomic<float>* macroAmt[kNumMacros] {};
+
+    // Live MIDI state from processor (per voice reads these atomics).
+    std::atomic<float> pitchBendSemis { 0.0f };
+    std::atomic<float> modWheel { 0.0f };
+    std::atomic<float> aftertouch { 0.0f };
+
+    // Computed per-block macro contributions to each destination (-1..+1 sum).
+    float modSum[ModDest::NumDests] {};
 };
 
 class VaporKeyAudioProcessor : public juce::AudioProcessor
@@ -71,12 +158,12 @@ public:
     bool acceptsMidi() const override  { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 3.0; }
+    double getTailLengthSeconds() const override { return 4.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return {}; }
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram (int) override;
+    const juce::String getProgramName (int) override;
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock& destData) override;
@@ -85,19 +172,34 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     SynthParams synthParams;
 
+    // External (UI) helpers.
+    void loadFactoryPreset (int index);
+    static juce::StringArray factoryPresetNames();
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void cacheParams();
+    void updateMacroSums();
+    void filterMidi (juce::MidiBuffer& midi);
 
     juce::Synthesiser synth;
 
     // FX
     juce::dsp::Chorus<float> chorusFx;
+    juce::dsp::Phaser<float> phaserFx;
+    juce::dsp::Compressor<float> compFx;
+    juce::dsp::IIR::Filter<float> eqLowL, eqLowR, eqMidL, eqMidR, eqHighL, eqHighR;
     juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayL { 192000 };
     juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayR { 192000 };
     juce::dsp::Reverb reverbFx;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> delaySmoothedL, delaySmoothedR;
 
     double sr = 44100.0;
+    double currentBpm = 120.0;
+    int currentProgram = 0;
+
+    // Mono mode helpers
+    juce::Array<int> monoHeldNotes;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VaporKeyAudioProcessor)
 };

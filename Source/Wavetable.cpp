@@ -51,13 +51,16 @@ const char* WavetableLibrary::shapeName (int shape) noexcept
 {
     switch (shape)
     {
-        case Basic:   return "Basic";
-        case Saws:    return "Saws";
-        case Squares: return "Squares";
-        case Vocal:   return "Vocal";
-        case Bell:    return "Bell";
-        case Digital: return "Digital";
-        default:      return "?";
+        case Basic:    return "Basic";
+        case Saws:     return "Saws";
+        case Squares:  return "Squares";
+        case Vocal:    return "Vocal";
+        case Bell:     return "Bell";
+        case Digital:  return "Digital";
+        case Harmonic: return "Harmonic";
+        case Glass:    return "Glass";
+        case Reso:     return "Reso";
+        default:       return "?";
     }
 }
 
@@ -165,6 +168,55 @@ WavetableLibrary::WavetableLibrary()
         {
             const float t = twoPi * (float) n / (float) N;
             b[(size_t) n] = std::sin (t + idx * std::sin (ratio * t));
+        }
+    });
+
+    // Harmonic: build by tilting the harmonic series amplitudes.
+    tables[Harmonic].build ([&](int f, Buf& b)
+    {
+        const float tilt = -1.0f + 2.0f * ((float) f / (float) (Wavetable::kNumFrames - 1)); // -1 dark, +1 bright
+        for (int n = 0; n < N; ++n)
+        {
+            const float t = twoPi * (float) n / (float) N;
+            float v = 0.0f;
+            for (int k = 1; k < 64; ++k)
+                v += std::pow ((float) k, tilt) / (float) k * std::sin (k * t);
+            b[(size_t) n] = v;
+        }
+    });
+
+    // Glass: clustered partials.
+    tables[Glass].build ([&](int f, Buf& b)
+    {
+        const float spread = 1.0f + (float) f * 0.18f;
+        const float partials[6] = { 1.0f, 1.5f * spread, 2.0f * spread, 3.5f, 5.5f, 8.0f };
+        const float amps[6]     = { 1.0f, 0.5f, 0.7f, 0.3f, 0.25f, 0.15f };
+        for (int n = 0; n < N; ++n)
+        {
+            const float t = twoPi * (float) n / (float) N;
+            float v = 0.0f;
+            for (int k = 0; k < 6; ++k)
+                v += amps[k] * std::sin (partials[k] * t);
+            b[(size_t) n] = v;
+        }
+    });
+
+    // Reso: emphasized formant near varying frequency.
+    tables[Reso].build ([&](int f, Buf& b)
+    {
+        const float center = 3.0f + 12.0f * ((float) f / (float) (Wavetable::kNumFrames - 1));
+        const float q = 1.5f;
+        for (int n = 0; n < N; ++n)
+        {
+            const float t = twoPi * (float) n / (float) N;
+            float v = 0.0f;
+            for (int k = 1; k < 64; ++k)
+            {
+                const float dx = ((float) k - center) / q;
+                const float resp = 1.0f / (1.0f + dx * dx);
+                v += (resp * 1.5f / (float) k) * std::sin (k * t);
+            }
+            b[(size_t) n] = v;
         }
     });
 }

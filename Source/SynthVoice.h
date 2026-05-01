@@ -2,7 +2,7 @@
 #include <JuceHeader.h>
 #include "Wavetable.h"
 
-struct SynthParams; // fwd
+struct SynthParams;
 
 class WTSound : public juce::SynthesiserSound
 {
@@ -25,34 +25,54 @@ public:
 
     void prepare (double sampleRate);
 
+    int getCurrentNote() const noexcept { return currentNote; }
+
+    // Smoothly retrigger / glide to new note (used in mono/legato mode without restarting envelopes).
+    void retargetNote (int midiNote, float velocity, bool retriggerEnvelopes);
+
 private:
     struct OscState
     {
-        float phase = 0.0f;
-        float driftPhase = 0.0f;   // slow drift LFO
         std::array<float, 7> uPhases {}; // unison voices
+        float driftPhase = 0.0f;
     };
 
     SynthParams& params;
     double sr = 44100.0;
 
     OscState osc[3];
+    float subPhase = 0.0f;
+
+    // Pink/brown noise state
+    float pinkB[7] {};
+    float brownState = 0.0f;
 
     // Envelopes
     juce::ADSR ampEnv;
     juce::ADSR modEnv;
-    juce::ADSR::Parameters ampP, modP;
+
+    // Pitch envelope (custom: simple exp decay from 1 -> 0 over decay time, scaled by amount)
+    float pEnvLevel = 0.0f;
+    float pEnvDecayCoef = 0.999f;
 
     // Per-voice filter (state variable, stereo)
     juce::dsp::StateVariableTPTFilter<float> filterL, filterR;
 
-    // LFOs
+    // LFOs (per voice for proper retrigger if desired; we still drive shape from params)
     float lfoPhase[2] { 0.0f, 0.0f };
+    float shState[2] { 0.0f, 0.0f };
+    float shTimer[2] { 0.0f, 0.0f };
 
-    float baseFreq = 440.0f;
-    float velocityGain = 1.0f;
+    int   currentNote = -1;
+    float baseFreqTarget = 440.0f;
+    float baseFreqCurrent = 440.0f;
+    float glideCoef = 1.0f; // per-sample
+    float velocityNorm = 1.0f;
     bool  noteHeld = false;
 
-    // Random gen for analog jitter (per voice for stereo decorrelation)
     juce::Random rng;
+
+    static float nextLfo (int shape, float phase, float& shStateVal, float& shTimerVal,
+                          float incPerSample, juce::Random& rng);
+    static inline float fastTanh (float x) noexcept;
 };

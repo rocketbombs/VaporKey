@@ -10,7 +10,7 @@ public:
         : name (displayName)
     {
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 70, 14);
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 70, 13);
         slider.setName (displayName);
         addAndMakeVisible (slider);
 
@@ -25,7 +25,7 @@ public:
     void resized() override
     {
         auto r = getLocalBounds();
-        label.setBounds (r.removeFromTop (16));
+        label.setBounds (r.removeFromTop (14));
         slider.setBounds (r);
     }
 
@@ -33,6 +33,46 @@ public:
     juce::Label  label;
     juce::String name;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+};
+
+class VaporCombo : public juce::Component
+{
+public:
+    VaporCombo (juce::AudioProcessorValueTreeState& s, const juce::String& paramID,
+                const juce::String& displayName, const juce::StringArray& items)
+    {
+        for (int i = 0; i < items.size(); ++i) box.addItem (items[i], i + 1);
+        addAndMakeVisible (box);
+        label.setText (displayName, juce::dontSendNotification);
+        label.setJustificationType (juce::Justification::centred);
+        label.setColour (juce::Label::textColourId, VK::Colors::neonCyan);
+        addAndMakeVisible (label);
+        attachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (s, paramID, box);
+    }
+    void resized() override
+    {
+        auto r = getLocalBounds();
+        label.setBounds (r.removeFromTop (14));
+        box.setBounds (r.reduced (4, 6));
+    }
+    juce::ComboBox box;
+    juce::Label label;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> attachment;
+};
+
+class VaporToggle : public juce::Component
+{
+public:
+    VaporToggle (juce::AudioProcessorValueTreeState& s, const juce::String& paramID, const juce::String& text)
+    {
+        btn.setButtonText (text);
+        btn.setClickingTogglesState (true);
+        addAndMakeVisible (btn);
+        attachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (s, paramID, btn);
+    }
+    void resized() override { btn.setBounds (getLocalBounds().reduced (2)); }
+    juce::TextButton btn;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> attachment;
 };
 
 class WavetableDisplay : public juce::Component, private juce::Timer
@@ -44,46 +84,7 @@ public:
         startTimerHz (24);
     }
 
-    void paint (juce::Graphics& g) override
-    {
-        auto r = getLocalBounds().toFloat().reduced (2.0f);
-        g.setColour (VK::Colors::bg);
-        g.fillRoundedRectangle (r, 4.0f);
-        g.setColour (VK::Colors::neonPink.withAlpha (0.35f));
-        g.drawRoundedRectangle (r, 4.0f, 1.0f);
-
-        // grid
-        g.setColour (VK::Colors::grid);
-        for (int i = 1; i < 4; ++i)
-        {
-            const float y = r.getY() + r.getHeight() * (float) i / 4.0f;
-            g.drawHorizontalLine ((int) y, r.getX(), r.getRight());
-        }
-
-        const int shape = (int) apvts.getRawParameterValue ("osc" + juce::String (idx + 1) + "_shape")->load();
-        const float pos = apvts.getRawParameterValue ("osc" + juce::String (idx + 1) + "_pos")->load();
-
-        const auto& wt = WavetableLibrary::get().getTable (shape);
-        juce::Path p;
-        const int N = 256;
-        for (int n = 0; n < N; ++n)
-        {
-            const float ph = (float) n / (float) N;
-            const float v = wt.sample (pos, ph, 2);
-            const float x = r.getX() + r.getWidth() * (float) n / (float) (N - 1);
-            const float y = r.getCentreY() - v * r.getHeight() * 0.42f;
-            if (n == 0) p.startNewSubPath (x, y);
-            else        p.lineTo (x, y);
-        }
-
-        for (int i = 4; i > 0; --i)
-        {
-            g.setColour (VK::Colors::neonCyan.withAlpha (0.10f * (float) i));
-            g.strokePath (p, juce::PathStrokeType ((float) i));
-        }
-        g.setColour (VK::Colors::neonCyan);
-        g.strokePath (p, juce::PathStrokeType (1.4f));
-    }
+    void paint (juce::Graphics& g) override;
 
 private:
     void timerCallback() override { repaint(); }
@@ -91,6 +92,107 @@ private:
     int idx;
 };
 
+// --- Pages ---
+
+class OscPage : public juce::Component
+{
+public:
+    explicit OscPage (VaporKeyAudioProcessor& p);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+private:
+    struct OscUI {
+        std::unique_ptr<VaporToggle> on;
+        std::unique_ptr<VaporCombo>  shape;
+        std::unique_ptr<WavetableDisplay> display;
+        std::unique_ptr<VaporKnob> position, level, pan, coarse, fine, unison, detune, phase;
+        juce::Label title;
+    };
+    OscUI oscUI[3];
+
+    std::unique_ptr<VaporToggle> subOn, noiseOn;
+    std::unique_ptr<VaporCombo>  subShape, noiseColor;
+    std::unique_ptr<VaporKnob>   subOct, subLevel, noiseLevel;
+
+    std::unique_ptr<VaporKnob>   glide, bendRange;
+    std::unique_ptr<VaporToggle> mono, legato;
+
+    VaporKeyAudioProcessor& proc;
+};
+
+class FilterEnvPage : public juce::Component
+{
+public:
+    explicit FilterEnvPage (VaporKeyAudioProcessor& p);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+private:
+    std::unique_ptr<VaporKnob>  cut, res, env, drive, key;
+    std::unique_ptr<VaporCombo> type;
+    std::unique_ptr<VaporKnob>  aA, aD, aS, aR, aVel;
+    std::unique_ptr<VaporKnob>  mA, mD, mS, mR, fVel;
+    std::unique_ptr<VaporKnob>  pAmt, pDecay;
+    std::unique_ptr<VaporKnob>  grit, vibe, drift, sat;
+};
+
+class ModPage : public juce::Component
+{
+public:
+    explicit ModPage (VaporKeyAudioProcessor& p);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+private:
+    std::unique_ptr<VaporCombo> l1Shape, l2Shape, l1Div, l2Div;
+    std::unique_ptr<VaporToggle> l1Sync, l2Sync;
+    std::unique_ptr<VaporKnob> l1Rate, l1Amt, l2Rate, l2Amt;
+
+    struct MacroUI {
+        std::unique_ptr<VaporKnob>  val, amt;
+        std::unique_ptr<VaporCombo> dest;
+    };
+    MacroUI macros[SynthParams::kNumMacros];
+};
+
+class FxPage : public juce::Component
+{
+public:
+    explicit FxPage (VaporKeyAudioProcessor& p);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+private:
+    std::unique_ptr<VaporKnob>  distDrive, distMix;
+    std::unique_ptr<VaporCombo> distType;
+
+    std::unique_ptr<VaporKnob>  chMix, chRate, chDepth;
+    std::unique_ptr<VaporKnob>  phMix, phRate, phDepth, phFb;
+
+    std::unique_ptr<VaporKnob>  eqLow, eqMid, eqMidF, eqHigh;
+
+    std::unique_ptr<VaporKnob>  dlMix, dlTime, dlFb;
+    std::unique_ptr<VaporToggle> dlSync;
+    std::unique_ptr<VaporCombo> dlDiv;
+
+    std::unique_ptr<VaporKnob>  rvMix, rvSize, rvDamp;
+
+    std::unique_ptr<VaporToggle> compOn;
+    std::unique_ptr<VaporKnob>  compThr, compRatio, compAtk, compRel, compMakeup;
+};
+
+class MasterPage : public juce::Component
+{
+public:
+    explicit MasterPage (VaporKeyAudioProcessor& p);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+private:
+    VaporKeyAudioProcessor& proc;
+    std::unique_ptr<VaporKnob> gain, width;
+    juce::ComboBox presetBox;
+    juce::TextButton prevBtn { "<" }, nextBtn { ">" };
+    juce::Label about;
+};
+
+// Top-level editor with TabbedComponent
 class VaporKeyAudioProcessorEditor : public juce::AudioProcessorEditor
 {
 public:
@@ -98,51 +200,12 @@ public:
     ~VaporKeyAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
-    void paintOverChildren (juce::Graphics&) override;
     void resized() override;
 
-    std::vector<juce::Rectangle<int>> sectionRects;
-    std::vector<juce::String>         sectionTitles;
-    std::vector<juce::Colour>         sectionColors;
-
 private:
-    void buildOscPanel (int i);
-
     VaporKeyAudioProcessor& proc;
     VaporLookAndFeel lnf;
-
-    // OSC panel components (3 oscillators)
-    struct OscUI {
-        juce::ToggleButton onBtn;
-        juce::ComboBox shapeBox;
-        std::unique_ptr<WavetableDisplay> display;
-        std::unique_ptr<VaporKnob> position, level, pan, coarse, fine, unison, detune;
-        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> onAtt;
-        std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> shapeAtt;
-        juce::Label title;
-    };
-    OscUI oscUI[3];
-
-    // Filter
-    std::unique_ptr<VaporKnob> kCut, kRes, kEnv;
-    juce::ComboBox fTypeBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> fTypeAtt;
-
-    // Envelopes
-    std::unique_ptr<VaporKnob> kAmpA, kAmpD, kAmpS, kAmpR;
-    std::unique_ptr<VaporKnob> kModA, kModD, kModS, kModR;
-
-    // LFOs
-    std::unique_ptr<VaporKnob> kLfo1Rate, kLfo1Amt, kLfo2Rate, kLfo2Amt;
-
-    // Warmth
-    std::unique_ptr<VaporKnob> kGrit, kVibe, kDrift, kSat;
-
-    // FX
-    std::unique_ptr<VaporKnob> kChorus, kDelay, kDelayTime, kDelayFb, kReverb;
-
-    // Master
-    std::unique_ptr<VaporKnob> kGain;
+    juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VaporKeyAudioProcessorEditor)
 };
