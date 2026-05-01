@@ -203,11 +203,31 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
     const int  noiseColor = rawChoice (params.noiseColor);
     const float noiseLin = juce::Decibels::decibelsToGain (params.noiseLevel->load());
 
-    // LFO rates
-    const float lfo1RateMod = juce::jlimit (0.05f, 30.0f, params.lfo1Rate->load() + modOffset (params, ModDest::Lfo1Rate, 10.0f));
-    const float lfo2RateMod = juce::jlimit (0.05f, 30.0f, params.lfo2Rate->load() + modOffset (params, ModDest::Lfo2Rate, 10.0f));
-    const float lfo1Inc = lfo1RateMod / (float) sr;
-    const float lfo2Inc = lfo2RateMod / (float) sr;
+    // LFO increments: tempo-synced when lfoX_sync is on, otherwise free-running Hz.
+    const double bpm = params.bpm.load();
+    float lfo1Inc, lfo2Inc;
+    if (*params.lfo1Sync > 0.5f)
+    {
+        const int    divIdx    = (int) (params.lfo1Div->load() + 0.5f);
+        const double periodSec = syncDivToBeats (divIdx) * 60.0 / juce::jmax (20.0, bpm);
+        lfo1Inc = 1.0f / (float) (periodSec * sr);
+    }
+    else
+    {
+        lfo1Inc = juce::jlimit (0.05f, 30.0f, params.lfo1Rate->load()
+                                    + modOffset (params, ModDest::Lfo1Rate, 10.0f)) / (float) sr;
+    }
+    if (*params.lfo2Sync > 0.5f)
+    {
+        const int    divIdx    = (int) (params.lfo2Div->load() + 0.5f);
+        const double periodSec = syncDivToBeats (divIdx) * 60.0 / juce::jmax (20.0, bpm);
+        lfo2Inc = 1.0f / (float) (periodSec * sr);
+    }
+    else
+    {
+        lfo2Inc = juce::jlimit (0.05f, 30.0f, params.lfo2Rate->load()
+                                    + modOffset (params, ModDest::Lfo2Rate, 10.0f)) / (float) sr;
+    }
     const float lfo1Amt = *params.lfo1Amt;
     const float lfo2Amt = *params.lfo2Amt;
     const int   lfo1Shape = rawChoice (params.lfo1Shape);

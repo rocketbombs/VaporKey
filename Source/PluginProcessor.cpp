@@ -418,18 +418,7 @@ void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
             if (auto bpm = info->getBpm()) currentBpm = *bpm;
     }
 
-    // Apply tempo sync to LFO/delay rates if enabled, by writing back to params? No — those are user params.
-    // Better: compute effective rates locally.
-    // (LFO rates are read inside voice — we instead modify the user param value would be wrong.)
-    // We apply tempo sync downstream:
-    //   - delay: override delay_time with bpm-derived value below
-    //   - LFOs sync: pre-compute effective rate and stuff into synthParams via a separate atomic.
-    // For minimal intrusion, repurpose: when sync is on, multiply rate setting by computed ratio.
-    // We'll compute the effective LFO rate on the fly in the voice using a helper field — but the voice
-    // already reads lfoXRate. Simplest: we don't write back — voice computes rate based on bpm if sync is on.
-    // To avoid expanding voice, expose currentBpm via a struct field readable by voice. Not available right now;
-    // instead, we override the rate parameter dynamic value here via `setValueNotifyingHost` would cause
-    // automation feedback. For v2 we just sync the delay and skip LFO sync (defer).
+    synthParams.bpm.store (currentBpm);
 
     filterMidi (midi);
 

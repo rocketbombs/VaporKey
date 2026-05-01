@@ -132,9 +132,12 @@ struct SynthParams
     std::atomic<float>* macroAmt[kNumMacros] {};
 
     // Live MIDI state from processor (per voice reads these atomics).
-    std::atomic<float> pitchBendSemis { 0.0f };
-    std::atomic<float> modWheel { 0.0f };
-    std::atomic<float> aftertouch { 0.0f };
+    std::atomic<float>  pitchBendSemis { 0.0f };
+    std::atomic<float>  modWheel { 0.0f };
+    std::atomic<float>  aftertouch { 0.0f };
+
+    // Written once per block by the processor before voices render.
+    std::atomic<double> bpm { 120.0 };
 
     // Computed per-block macro contributions to each destination (-1..+1 sum).
     float modSum[ModDest::NumDests] {};
