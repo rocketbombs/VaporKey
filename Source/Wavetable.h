@@ -29,6 +29,14 @@ public:
         }
     }
 
+    // Build a wavetable from a mono audio buffer. Treats the buffer as a
+    // sequence of fixed-size frames (Serum convention: kFrameSize samples per
+    // frame). Up to kNumFrames frames are extracted from the start of the
+    // buffer; the last available frame is replicated when fewer are present.
+    // If the buffer is shorter than one frame the data is zero-padded into a
+    // single frame and the rest are copies of it.
+    void buildFromMonoAudio (const float* samples, int numSamples);
+
     inline float sample (float position01, float phase01, int mip) const noexcept
     {
         const float fpos = juce::jlimit (0.0f, (float) (kNumFrames - 1), position01 * (kNumFrames - 1));
@@ -64,18 +72,20 @@ private:
 class WavetableLibrary
 {
 public:
-    enum Shape { Basic = 0, Saws, Squares, Vocal, Bell, Digital, Harmonic, Glass, Reso, NumShapes };
+    // 'Custom' selects a per-oscillator user-loaded wavetable owned by the
+    // processor. The library itself does not store a Custom table.
+    enum Shape { Basic = 0, Saws, Squares, Vocal, Bell, Digital, Harmonic, Glass, Reso, Custom, NumShapes };
 
     static WavetableLibrary& get();
 
     const Wavetable& getTable (int shape) const noexcept
     {
-        return tables[(size_t) juce::jlimit (0, (int) NumShapes - 1, shape)];
+        return tables[(size_t) juce::jlimit (0, (int) Custom - 1, shape)];
     }
 
     static const char* shapeName (int shape) noexcept;
 
 private:
     WavetableLibrary();
-    std::array<Wavetable, NumShapes> tables;
+    std::array<Wavetable, (size_t) Custom> tables;
 };

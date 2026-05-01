@@ -175,12 +175,27 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
     struct OP {
         bool on; int shape; float pos; float lin; float panL, panR;
         float ratio; int unison; float det;
+        const Wavetable* table;
     };
+    // Resolve per-osc wavetable pointer once per block. Custom shapes use the
+    // processor-owned shared_ptr (loaded atomically); fall back to Basic when
+    // no user wavetable has been loaded yet.
+    std::shared_ptr<Wavetable> customSnap[3];
     OP op[3];
     for (int i = 0; i < 3; ++i)
     {
         op[i].on     = *params.osc[i].on > 0.5f;
         op[i].shape  = rawChoice (params.osc[i].shape);
+        if (op[i].shape == WavetableLibrary::Custom)
+        {
+            customSnap[i] = std::atomic_load (&params.customTables[i]);
+            op[i].table = customSnap[i] ? customSnap[i].get()
+                                        : &lib.getTable (WavetableLibrary::Basic);
+        }
+        else
+        {
+            op[i].table = &lib.getTable (op[i].shape);
+        }
         op[i].pos    = juce::jlimit (0.0f, 1.0f, params.osc[i].position->load()
                                       + modOffset (params, ModDest::Osc1Pos + i, 1.0f));
         const float lvDb = params.osc[i].level->load() + modOffset (params, ModDest::Osc1Lvl + i, 12.0f);
@@ -269,7 +284,7 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
         for (int i = 0; i < 3; ++i)
         {
             if (! op[i].on) continue;
-            const auto& wt = lib.getTable (op[i].shape);
+            const auto& wt = *op[i].table;
 
             osc[i].driftPhase += 0.07f / (float) sr;
             if (osc[i].driftPhase >= 1.0f) osc[i].driftPhase -= 1.0f;
