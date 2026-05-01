@@ -586,7 +586,7 @@ void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         juce::dsp::AudioBlock<float> blk (buffer);
         juce::dsp::ProcessContextReplacing<float> ctx (blk);
         compFx.process (ctx);
-        const float mk = juce::Decibels::decibelsToGain (*synthParams.compMakeup);
+        const float mk = juce::Decibels::decibelsToGain (synthParams.compMakeup->load());
         if (std::abs (mk - 1.0f) > 0.001f) buffer.applyGain (mk);
     }
 }
