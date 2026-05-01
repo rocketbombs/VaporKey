@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "Presets.h"
 
 using namespace VK;
 
@@ -912,14 +913,16 @@ void FxPage::resized()
 
 int MasterPage::PresetListModel::getNumRows()
 {
-    return (int) owner.entries.size();
+    return (int) owner.visibleRows.size();
 }
 
 void MasterPage::PresetListModel::paintListBoxItem (int row, juce::Graphics& g,
                                                     int width, int height, bool selected)
 {
-    if (row < 0 || row >= (int) owner.entries.size()) return;
-    const auto& entry = owner.entries[(size_t) row];
+    if (row < 0 || row >= (int) owner.visibleRows.size()) return;
+    const int entryIdx = owner.visibleRows[(size_t) row];
+    if (entryIdx < 0 || entryIdx >= (int) owner.entries.size()) return;
+    const auto& entry = owner.entries[(size_t) entryIdx];
 
     if (selected)
     {
@@ -944,7 +947,17 @@ void MasterPage::PresetListModel::paintListBoxItem (int row, juce::Graphics& g,
     g.setColour (selected ? Colors::textBright
                           : (entry.isFactory ? Colors::text : Colors::neonAmber.brighter (0.4f)));
     g.setFont (Fonts::preset());
-    g.drawText (entry.name, 36, 0, width - 56, height, juce::Justification::centredLeft);
+    const int nameRight = entry.isFactory ? (width - 130) : (width - 56);
+    g.drawText (entry.name, 36, 0, juce::jmax (40, nameRight - 36), height, juce::Justification::centredLeft);
+
+    // Category tag on the right (factory only)
+    if (entry.isFactory && entry.category >= 0 && entry.category < VKPresets::NumCategories)
+    {
+        g.setFont (Fonts::small());
+        g.setColour (Colors::neonCyan.withAlpha (0.6f));
+        g.drawText (juce::String (VKPresets::categoryShortName (entry.category)).toUpperCase(),
+                    width - 120, 0, 50, height, juce::Justification::centredRight);
+    }
 
     if (selected)
     {
@@ -956,17 +969,47 @@ void MasterPage::PresetListModel::paintListBoxItem (int row, juce::Graphics& g,
 
 void MasterPage::PresetListModel::listBoxItemClicked (int row, const juce::MouseEvent&)
 {
-    owner.loadEntry (row);
+    if (row < 0 || row >= (int) owner.visibleRows.size()) return;
+    owner.loadEntry (owner.visibleRows[(size_t) row]);
 }
 
 void MasterPage::rebuildEntries()
 {
     entries.clear();
-    for (const auto& n : VaporKeyAudioProcessor::factoryPresetNames())
-        entries.push_back ({ n, true });
+
+    const auto& factory = VKPresets::all();
+    for (const auto& p : factory)
+        entries.push_back ({ juce::String (p.name), true, p.category });
+
     for (const auto& n : proc.getUserPresetNames())
-        entries.push_back ({ n, false });
+        entries.push_back ({ n, false, -1 });
+
+    rebuildVisible();
+}
+
+void MasterPage::rebuildVisible()
+{
+    visibleRows.clear();
+    // categoryFilter item IDs:
+    //   1            = All
+    //   2..1+N       = factory category (Bass, Lead, Pad, Pluck, Keys, Bell, FX, Arp)
+    //   2+N          = User
+    const int sel = categoryFilter.getSelectedId();
+    const int N   = (int) VKPresets::NumCategories;
+
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        const auto& e = entries[i];
+        bool match = false;
+        if (sel <= 0 || sel == 1) match = true;
+        else if (sel == 2 + N)    match = ! e.isFactory;
+        else                      match = e.isFactory && e.category == (sel - 2);
+
+        if (match) visibleRows.push_back ((int) i);
+    }
+
     presetList.updateContent();
+    presetList.repaint();
 }
 
 int MasterPage::findEntryIndex (const juce::String& name, bool isFactory) const
@@ -974,6 +1017,13 @@ int MasterPage::findEntryIndex (const juce::String& name, bool isFactory) const
     for (size_t i = 0; i < entries.size(); ++i)
         if (entries[i].isFactory == isFactory && entries[i].name == name)
             return (int) i;
+    return -1;
+}
+
+int MasterPage::visibleRowFromEntryIndex (int entryIndex) const
+{
+    for (size_t i = 0; i < visibleRows.size(); ++i)
+        if (visibleRows[i] == entryIndex) return (int) i;
     return -1;
 }
 
@@ -992,7 +1042,8 @@ void MasterPage::loadEntry (int idx)
     {
         proc.loadUserPresetByName (e.name);
     }
-    presetList.selectRow (idx);
+    const int row = visibleRowFromEntryIndex (idx);
+    if (row >= 0) presetList.selectRow (row);
     refreshNowPlaying();
     nameField.setText (e.isFactory ? juce::String() : e.name, juce::dontSendNotification);
 }
@@ -1004,16 +1055,22 @@ void MasterPage::refreshNowPlaying()
                                 : juce::String ("(unnamed)");
     presetNowLabel.setText (name, juce::dontSendNotification);
     const int idx = findEntryIndex (proc.currentPresetName, proc.currentPresetIsFactory);
-    if (idx >= 0) presetList.selectRow (idx, false, true);
+    if (idx >= 0)
+    {
+        const int row = visibleRowFromEntryIndex (idx);
+        if (row >= 0) presetList.selectRow (row, false, true);
+    }
 }
 
 void MasterPage::stepPreset (int dir)
 {
-    const int n = (int) entries.size();
+    // Step within whatever the user is currently viewing — wraps around the
+    // filtered list so navigation feels predictable per category.
+    const int n = (int) visibleRows.size();
     if (n == 0) return;
-    int cur = juce::jmax (0, presetList.getSelectedRow());
-    cur = (cur + dir + n) % n;
-    loadEntry (cur);
+    int curRow = juce::jmax (0, presetList.getSelectedRow());
+    curRow = (curRow + dir + n) % n;
+    loadEntry (visibleRows[(size_t) curRow]);
 }
 
 void MasterPage::showStatus (const juce::String& msg, juce::Colour col)
@@ -1052,7 +1109,11 @@ void MasterPage::onSave()
     {
         rebuildEntries();
         const int idx = findEntryIndex (proc.currentPresetName, false);
-        if (idx >= 0) presetList.selectRow (idx);
+        if (idx >= 0)
+        {
+            const int row = visibleRowFromEntryIndex (idx);
+            if (row >= 0) presetList.selectRow (row);
+        }
         refreshNowPlaying();
         nameField.setText (name, juce::dontSendNotification);
         showStatus ("SAVED  -  " + name.toUpperCase(), Colors::neonGreen);
@@ -1066,8 +1127,9 @@ void MasterPage::onSave()
 void MasterPage::onRename()
 {
     const int row = presetList.getSelectedRow();
-    if (row < 0 || row >= (int) entries.size()) { showStatus ("SELECT A PRESET", Colors::neonAmber); return; }
-    const auto& e = entries[(size_t) row];
+    if (row < 0 || row >= (int) visibleRows.size()) { showStatus ("SELECT A PRESET", Colors::neonAmber); return; }
+    const int entryIdx = visibleRows[(size_t) row];
+    const auto& e = entries[(size_t) entryIdx];
     if (e.isFactory) { showStatus ("CANNOT RENAME FACTORY", Colors::neonAmber); return; }
 
     const auto newName = nameField.getText().trim();
@@ -1077,7 +1139,11 @@ void MasterPage::onRename()
     {
         rebuildEntries();
         const int idx = findEntryIndex (newName, false);
-        if (idx >= 0) presetList.selectRow (idx);
+        if (idx >= 0)
+        {
+            const int row = visibleRowFromEntryIndex (idx);
+            if (row >= 0) presetList.selectRow (row);
+        }
         refreshNowPlaying();
         showStatus ("RENAMED", Colors::neonGreen);
     }
@@ -1090,8 +1156,9 @@ void MasterPage::onRename()
 void MasterPage::onDelete()
 {
     const int row = presetList.getSelectedRow();
-    if (row < 0 || row >= (int) entries.size()) { showStatus ("SELECT A PRESET", Colors::neonAmber); return; }
-    const auto& e = entries[(size_t) row];
+    if (row < 0 || row >= (int) visibleRows.size()) { showStatus ("SELECT A PRESET", Colors::neonAmber); return; }
+    const int entryIdx = visibleRows[(size_t) row];
+    const auto& e = entries[(size_t) entryIdx];
     if (e.isFactory) { showStatus ("CANNOT DELETE FACTORY", Colors::neonAmber); return; }
 
     const auto deletedName = e.name;
@@ -1140,10 +1207,31 @@ MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
     presetList.setOutlineThickness (1);
     addAndMakeVisible (presetList);
 
+    categoryLabel.setText ("CATEGORY", juce::dontSendNotification);
+    categoryLabel.setFont (Fonts::section());
+    categoryLabel.setColour (juce::Label::textColourId, Colors::neonCyan);
+    categoryLabel.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (categoryLabel);
+
+    categoryFilter.addItem ("All", 1);
+    {
+        const auto cats = VKPresets::categoryNames();
+        for (int i = 0; i < cats.size(); ++i)
+            categoryFilter.addItem (cats[i], 2 + i);
+        categoryFilter.addItem ("User", 2 + cats.size());
+    }
+    categoryFilter.setSelectedId (1, juce::dontSendNotification);
+    categoryFilter.onChange = [this] { rebuildVisible(); refreshNowPlaying(); };
+    addAndMakeVisible (categoryFilter);
+
     rebuildEntries();
     {
         const int idx = findEntryIndex (proc.currentPresetName, proc.currentPresetIsFactory);
-        if (idx >= 0) presetList.selectRow (idx);
+        if (idx >= 0)
+        {
+            const int row = visibleRowFromEntryIndex (idx);
+            if (row >= 0) presetList.selectRow (row);
+        }
     }
 
     prevBtn.onClick = [this] { stepPreset (-1); };
@@ -1224,6 +1312,11 @@ void MasterPage::resized()
         a.removeFromTop (4);
         presetNowLabel.setBounds (a.removeFromTop (40));
         a.removeFromTop (6);
+
+        auto catRow = a.removeFromTop (28);
+        categoryLabel.setBounds (catRow.removeFromLeft (90));
+        categoryFilter.setBounds (catRow.reduced (2, 1));
+        a.removeFromTop (8);
 
         auto btnRow = a.removeFromTop (32);
         prevBtn.setBounds (btnRow.removeFromLeft (110));

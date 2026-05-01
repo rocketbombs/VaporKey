@@ -175,10 +175,13 @@ public:
     void resized() override;
 
     // Combined factory + user preset listing.
-    struct PresetEntry { juce::String name; bool isFactory; };
+    struct PresetEntry { juce::String name; bool isFactory; int category; };
     std::vector<PresetEntry> entries;
+    std::vector<int>         visibleRows;   // entries indices that match the active filter
     void rebuildEntries();
+    void rebuildVisible();
     int  findEntryIndex (const juce::String& name, bool isFactory) const;
+    int  visibleRowFromEntryIndex (int entryIndex) const;
     void loadEntry (int index);
     void refreshNowPlaying();
 
@@ -190,6 +193,8 @@ private:
     juce::TextButton saveBtn { "SAVE" }, renameBtn { "RENAME" }, deleteBtn { "DELETE" };
     juce::TextEditor nameField;
     juce::Label presetLabel, presetNowLabel, nameLabel, brand, tagline, copy;
+    juce::ComboBox categoryFilter;     // "All / Bass / Lead / ... / User"
+    juce::Label    categoryLabel;
 
     class PresetListModel : public juce::ListBoxModel
     {
