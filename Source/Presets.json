@@ -1,0 +1,606 @@
+{
+  "_comment": [
+    "VaporKey factory presets. Edit this file to add/remove/tweak presets.",
+    "It is embedded into the plugin binary at build time via juce_add_binary_data,",
+    "and parsed lazily on first access (see Presets.cpp).",
+    "",
+    "Each preset has:",
+    "  name     - display string",
+    "  category - one of: Bass, Lead, Pad, Pluck, Keys, Bell, FX, Arp",
+    "  values   - object of paramID -> value (any param not listed keeps its default)",
+    "",
+    "Wavetable shape indices for osc<n>_shape:",
+    "  0 Basic, 1 Saws, 2 Squares, 3 Vocal, 4 Bell, 5 Digital, 6 Harmonic, 7 Glass, 8 Reso"
+  ],
+  "categories": ["Bass", "Lead", "Pad", "Pluck", "Keys", "Bell", "FX", "Arp"],
+  "presets": [
+    { "name": "Init", "category": "Keys", "values": {
+      "osc1_on": 1, "osc2_on": 0, "osc3_on": 0, "osc1_shape": 0, "osc1_pos": 0,
+      "f_cut": 12000, "f_res": 0.3, "a_a": 0.005, "a_d": 0.4, "a_s": 0.7, "a_r": 0.3,
+      "grit": 0, "vibe": 0, "drift": 0.1, "sat": 0.05,
+      "chorus": 0, "delay": 0, "reverb": 0, "gain": -6
+    }},
+
+    { "name": "Neon Bass", "category": "Bass", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 1, "osc1_pos": 0.2, "osc1_unison": 1,
+      "osc2_shape": 2, "osc2_pos": 0.0, "osc2_coarse": 0, "osc2_level": -6,
+      "sub_on": 1, "sub_oct": -1, "sub_level": -6,
+      "f_cut": 1800, "f_res": 0.55, "f_env": 0.6, "f_drive": 0.3,
+      "a_a": 0.001, "a_d": 0.25, "a_s": 0.6, "a_r": 0.15,
+      "m_a": 0.001, "m_d": 0.3, "m_s": 0.0, "m_r": 0.2,
+      "sat": 0.35, "gain": -4
+    }},
+
+    { "name": "Sub Hammer", "category": "Bass", "values": {
+      "osc1_on": 1, "osc2_on": 0, "osc3_on": 0,
+      "osc1_shape": 2, "osc1_pos": 0.0,
+      "sub_on": 1, "sub_oct": -1, "sub_level": -3, "sub_shape": 0,
+      "f_cut": 900, "f_res": 0.4, "f_env": 0.5, "f_drive": 0.5,
+      "a_a": 0.001, "a_d": 0.2, "a_s": 0.8, "a_r": 0.1,
+      "sat": 0.5, "gain": -3
+    }},
+
+    { "name": "Reese Bass", "category": "Bass", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 1, "osc1_pos": 0.3, "osc1_unison": 5, "osc1_detune": 0.15,
+      "osc2_shape": 1, "osc2_pos": 0.3, "osc2_fine": 12, "osc2_unison": 5, "osc2_detune": 0.18, "osc2_level": -2,
+      "f_cut": 1500, "f_res": 0.55, "f_drive": 0.35,
+      "a_a": 0.002, "a_d": 0.3, "a_s": 0.85, "a_r": 0.4,
+      "chorus": 0.25, "sat": 0.4, "gain": -6
+    }},
+
+    { "name": "Acid 303", "category": "Bass", "values": {
+      "osc1_on": 1, "osc2_on": 0, "osc3_on": 0,
+      "osc1_shape": 1, "osc1_pos": 0.0,
+      "f_cut": 800, "f_res": 0.85, "f_env": 0.85, "f_drive": 0.5,
+      "a_a": 0.001, "a_d": 0.18, "a_s": 0.0, "a_r": 0.15,
+      "m_a": 0.001, "m_d": 0.18, "m_s": 0.0, "m_r": 0.15,
+      "glide": 0.08, "mono": 1,
+      "sat": 0.3, "dist_drive": 0.3, "dist_mix": 0.3, "gain": -5
+    }},
+
+    { "name": "Glide Bass", "category": "Bass", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 1, "osc1_pos": 0.4, "osc1_unison": 3, "osc1_detune": 0.2,
+      "osc2_shape": 2, "osc2_pos": 0.0, "osc2_coarse": -12, "osc2_level": -4,
+      "f_cut": 1400, "f_res": 0.5, "f_env": 0.4,
+      "a_a": 0.005, "a_d": 0.4, "a_s": 0.7, "a_r": 0.3,
+      "glide": 0.2, "mono": 1, "legato": 1,
+      "chorus": 0.2, "sat": 0.3, "gain": -5
+    }},
+
+    { "name": "FM Bass", "category": "Bass", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 5, "osc1_pos": 0.45,
+      "osc2_shape": 0, "osc2_pos": 0.0, "osc2_coarse": -12, "osc2_level": -4,
+      "sub_on": 1, "sub_oct": -1, "sub_level": -9,
+      "f_cut": 2200, "f_res": 0.4, "f_env": 0.4,
+      "a_a": 0.002, "a_d": 0.3, "a_s": 0.5, "a_r": 0.2,
+      "sat": 0.25, "gain": -6
+    }},
+
+    { "name": "Pulse Bass", "category": "Bass", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 2, "osc1_pos": 0.55,
+      "osc2_shape": 2, "osc2_pos": 0.7, "osc2_fine": -7, "osc2_level": -6,
+      "sub_on": 1, "sub_oct": -1, "sub_level": -8,
+      "f_cut": 1700, "f_res": 0.45, "f_env": 0.5,
+      "a_a": 0.001, "a_d": 0.25, "a_s": 0.7, "a_r": 0.2,
+      "lfo2_rate": 0.5, "lfo2_amt": 0.25,
+      "sat": 0.3, "gain": -5
+    }},
+
+    { "name": "Wobble", "category": "Bass", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 5, "osc1_pos": 0.5, "osc1_unison": 3, "osc1_detune": 0.3,
+      "osc2_shape": 1, "osc2_pos": 0.4, "osc2_coarse": -12, "osc2_level": -6,
+      "sub_on": 1, "sub_oct": -1, "sub_level": -9,
+      "f_cut": 1200, "f_res": 0.7, "f_drive": 0.4,
+      "lfo1_rate": 4.0, "lfo1_shape": 2, "lfo1_amt": 0.85,
+      "a_a": 0.002, "a_d": 0.3, "a_s": 0.9, "a_r": 0.3,
+      "sat": 0.4, "gain": -6
+    }},
+
+    { "name": "Vapor Lead", "category": "Lead", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 1, "osc1_pos": 0.4, "osc1_unison": 5, "osc1_detune": 0.45,
+      "osc2_shape": 1, "osc2_pos": 0.6, "osc2_coarse": -12, "osc2_unison": 3, "osc2_detune": 0.35, "osc2_level": -10,
+      "f_cut": 6500, "f_res": 0.4, "f_env": 0.3,
+      "a_a": 0.01, "a_d": 0.3, "a_s": 0.85, "a_r": 0.6,
+      "m_a": 0.005, "m_d": 0.5, "m_s": 0.0, "m_r": 0.5,
+      "lfo2_rate": 4.0, "lfo2_amt": 0.25,
+      "grit": 0.15, "drift": 0.3, "sat": 0.2,
+      "chorus": 0.4, "delay": 0.35, "delay_time": 0.45, "delay_fb": 0.45,
+      "reverb": 0.25, "gain": -8
+    }},
+
+    { "name": "Aggro Lead", "category": "Lead", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 1,
+      "osc1_shape": 2, "osc1_pos": 0.3, "osc1_unison": 7, "osc1_detune": 0.55,
+      "osc2_shape": 2, "osc2_pos": 0.5, "osc2_coarse": -12, "osc2_unison": 3, "osc2_detune": 0.3,
+      "osc3_shape": 1, "osc3_pos": 0.7, "osc3_coarse": 7, "osc3_unison": 3, "osc3_detune": 0.4, "osc3_level": -9,
+      "f_cut": 8500, "f_res": 0.5, "f_env": 0.3, "f_drive": 0.4,
+      "a_a": 0.002, "a_d": 0.3, "a_s": 0.8, "a_r": 0.4,
+      "dist_drive": 0.4, "dist_mix": 0.6,
+      "phaser": 0.3, "chorus": 0.3, "delay": 0.3, "reverb": 0.3,
+      "sat": 0.3, "gain": -10
+    }},
+
+    { "name": "Sawtooth Hero", "category": "Lead", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 1, "osc1_pos": 0.5, "osc1_unison": 7, "osc1_detune": 0.5,
+      "osc2_shape": 1, "osc2_pos": 0.5, "osc2_coarse": 12, "osc2_unison": 3, "osc2_detune": 0.3, "osc2_level": -12,
+      "f_cut": 10000, "f_res": 0.3,
+      "a_a": 0.005, "a_d": 0.3, "a_s": 0.9, "a_r": 0.4,
+      "chorus": 0.5, "delay": 0.3, "reverb": 0.35,
+      "sat": 0.2, "gain": -9
+    }},
+
+    { "name": "Square Wave", "category": "Lead", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 2, "osc1_pos": 0.5, "osc1_unison": 3, "osc1_detune": 0.2,
+      "osc2_shape": 2, "osc2_pos": 0.7, "osc2_fine": 7, "osc2_level": -9,
+      "f_cut": 6000, "f_res": 0.4, "f_env": 0.2,
+      "a_a": 0.005, "a_d": 0.4, "a_s": 0.8, "a_r": 0.3,
+      "lfo2_rate": 5.5, "lfo2_amt": 0.15,
+      "chorus": 0.3, "delay": 0.3, "reverb": 0.25, "gain": -9
+    }},
+
+    { "name": "Vintage Mono", "category": "Lead", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 1, "osc1_pos": 0.4,
+      "osc2_shape": 2, "osc2_pos": 0.5, "osc2_fine": -7, "osc2_level": -6,
+      "sub_on": 1, "sub_oct": -1, "sub_level": -10,
+      "f_cut": 3500, "f_res": 0.55, "f_env": 0.5, "f_drive": 0.3,
+      "a_a": 0.005, "a_d": 0.5, "a_s": 0.7, "a_r": 0.4,
+      "glide": 0.04, "mono": 1,
+      "vibe": 0.2, "drift": 0.4, "sat": 0.35, "gain": -7
+    }},
+
+    { "name": "Resonant Lead", "category": "Lead", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 8, "osc1_pos": 0.6, "osc1_unison": 3, "osc1_detune": 0.25,
+      "osc2_shape": 1, "osc2_pos": 0.3, "osc2_coarse": -12, "osc2_level": -9,
+      "f_cut": 5000, "f_res": 0.7, "f_env": 0.4,
+      "a_a": 0.005, "a_d": 0.4, "a_s": 0.8, "a_r": 0.4,
+      "chorus": 0.35, "phaser": 0.25, "delay": 0.3, "reverb": 0.25,
+      "sat": 0.25, "gain": -9
+    }},
+
+    { "name": "Octave Lead", "category": "Lead", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 1,
+      "osc1_shape": 1, "osc1_pos": 0.4,
+      "osc2_shape": 1, "osc2_pos": 0.4, "osc2_coarse": 12, "osc2_level": -6,
+      "osc3_shape": 1, "osc3_pos": 0.4, "osc3_coarse": -12, "osc3_level": -9,
+      "f_cut": 7000, "f_res": 0.35, "f_env": 0.3,
+      "a_a": 0.005, "a_d": 0.4, "a_s": 0.8, "a_r": 0.5,
+      "chorus": 0.4, "delay": 0.35, "reverb": 0.3, "gain": -10
+    }},
+
+    { "name": "Bright Lead", "category": "Lead", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 6, "osc1_pos": 0.85, "osc1_unison": 3, "osc1_detune": 0.15,
+      "osc2_shape": 1, "osc2_pos": 0.5, "osc2_fine": 4, "osc2_unison": 3, "osc2_detune": 0.2, "osc2_level": -9,
+      "f_cut": 12000, "f_res": 0.25,
+      "a_a": 0.003, "a_d": 0.3, "a_s": 0.85, "a_r": 0.4,
+      "chorus": 0.3, "delay": 0.3, "reverb": 0.3, "gain": -10
+    }},
+
+    { "name": "Pulse Lead", "category": "Lead", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 2, "osc1_pos": 0.6, "osc1_unison": 5, "osc1_detune": 0.35,
+      "osc2_shape": 2, "osc2_pos": 0.3, "osc2_coarse": -12, "osc2_level": -9,
+      "f_cut": 6500, "f_res": 0.5, "f_env": 0.35,
+      "a_a": 0.005, "a_d": 0.35, "a_s": 0.8, "a_r": 0.5,
+      "lfo2_rate": 2.0, "lfo2_amt": 0.25,
+      "chorus": 0.4, "delay": 0.35, "reverb": 0.25, "gain": -9
+    }},
+
+    { "name": "Synthwave Pad", "category": "Pad", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 1,
+      "osc1_shape": 3, "osc1_pos": 0.5, "osc1_unison": 5, "osc1_detune": 0.5,
+      "osc2_shape": 6, "osc2_pos": 0.3, "osc2_coarse": 7, "osc2_unison": 3, "osc2_detune": 0.4, "osc2_level": -9,
+      "osc3_shape": 3, "osc3_pos": 0.7, "osc3_coarse": -12, "osc3_unison": 3, "osc3_detune": 0.6, "osc3_level": -12,
+      "f_cut": 4500, "f_res": 0.25,
+      "a_a": 0.8, "a_d": 1.5, "a_s": 0.85, "a_r": 2.0,
+      "lfo1_rate": 0.8, "lfo1_amt": 0.3, "lfo2_rate": 0.3, "lfo2_amt": 0.3,
+      "grit": 0.05, "vibe": 0.1, "drift": 0.4, "sat": 0.15,
+      "chorus": 0.6, "delay": 0.3, "reverb": 0.45, "gain": -10
+    }},
+
+    { "name": "Strings Pad", "category": "Pad", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 1,
+      "osc1_shape": 1, "osc1_pos": 0.5, "osc1_unison": 7, "osc1_detune": 0.4,
+      "osc2_shape": 1, "osc2_pos": 0.5, "osc2_fine": 7, "osc2_unison": 5, "osc2_detune": 0.35, "osc2_level": -8,
+      "osc3_shape": 1, "osc3_pos": 0.5, "osc3_coarse": -12, "osc3_unison": 3, "osc3_detune": 0.5, "osc3_level": -10,
+      "f_cut": 5000, "f_res": 0.2,
+      "a_a": 0.6, "a_d": 1.0, "a_s": 0.9, "a_r": 1.5,
+      "vibe": 0.1, "drift": 0.4,
+      "chorus": 0.55, "reverb": 0.4, "delay": 0.2, "gain": -11
+    }},
+
+    { "name": "Choir Pad", "category": "Pad", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 3, "osc1_pos": 0.3, "osc1_unison": 7, "osc1_detune": 0.4,
+      "osc2_shape": 3, "osc2_pos": 0.7, "osc2_fine": 7, "osc2_unison": 5, "osc2_detune": 0.3, "osc2_level": -9,
+      "f_cut": 4200, "f_res": 0.2,
+      "a_a": 1.2, "a_d": 1.5, "a_s": 0.9, "a_r": 2.5,
+      "lfo1_rate": 0.4, "lfo1_amt": 0.2,
+      "vibe": 0.2, "drift": 0.5,
+      "chorus": 0.5, "reverb": 0.5, "gain": -12
+    }},
+
+    { "name": "Warm Pad", "category": "Pad", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 0, "osc1_pos": 0.6, "osc1_unison": 3, "osc1_detune": 0.3,
+      "osc2_shape": 6, "osc2_pos": 0.2, "osc2_coarse": -12, "osc2_unison": 3, "osc2_detune": 0.4, "osc2_level": -10,
+      "f_cut": 3500, "f_res": 0.2,
+      "a_a": 1.5, "a_d": 2.0, "a_s": 0.85, "a_r": 3.0,
+      "sat": 0.2, "vibe": 0.15, "drift": 0.45,
+      "chorus": 0.45, "reverb": 0.5, "delay": 0.2, "gain": -11
+    }},
+
+    { "name": "Glass Pad", "category": "Pad", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 1,
+      "osc1_shape": 7, "osc1_pos": 0.4, "osc1_unison": 5, "osc1_detune": 0.3,
+      "osc2_shape": 4, "osc2_pos": 0.3, "osc2_coarse": 12, "osc2_unison": 3, "osc2_detune": 0.25, "osc2_level": -12,
+      "osc3_shape": 6, "osc3_pos": 0.6, "osc3_coarse": -12, "osc3_level": -12,
+      "f_cut": 6500, "f_res": 0.2,
+      "a_a": 0.9, "a_d": 1.4, "a_s": 0.85, "a_r": 2.2,
+      "lfo2_rate": 0.6, "lfo2_amt": 0.25,
+      "chorus": 0.5, "reverb": 0.5, "delay": 0.3, "delay_time": 0.6, "gain": -12
+    }},
+
+    { "name": "Lush Pad", "category": "Pad", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 1,
+      "osc1_shape": 1, "osc1_pos": 0.5, "osc1_unison": 7, "osc1_detune": 0.55,
+      "osc2_shape": 3, "osc2_pos": 0.5, "osc2_coarse": 7, "osc2_unison": 5, "osc2_detune": 0.45, "osc2_level": -8,
+      "osc3_shape": 6, "osc3_pos": 0.4, "osc3_coarse": 12, "osc3_unison": 3, "osc3_detune": 0.4, "osc3_level": -12,
+      "f_cut": 4800, "f_res": 0.25,
+      "a_a": 1.0, "a_d": 2.0, "a_s": 0.9, "a_r": 2.5,
+      "lfo1_rate": 0.5, "lfo1_amt": 0.25,
+      "chorus": 0.7, "phaser": 0.2, "delay": 0.35, "reverb": 0.5, "gain": -12
+    }},
+
+    { "name": "Sweep Pad", "category": "Pad", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 1, "osc1_pos": 0.5, "osc1_unison": 5, "osc1_detune": 0.4,
+      "osc2_shape": 6, "osc2_pos": 0.3, "osc2_coarse": -12, "osc2_unison": 3, "osc2_detune": 0.5, "osc2_level": -10,
+      "f_cut": 1800, "f_res": 0.4, "f_env": 0.7,
+      "a_a": 0.8, "a_d": 2.5, "a_s": 0.6, "a_r": 2.5,
+      "m_a": 1.5, "m_d": 3.0, "m_s": 0.8, "m_r": 2.0,
+      "chorus": 0.55, "phaser": 0.3, "reverb": 0.5, "delay": 0.3, "gain": -11
+    }},
+
+    { "name": "Soft Pad", "category": "Pad", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 0, "osc1_pos": 0.0, "osc1_unison": 3, "osc1_detune": 0.2,
+      "osc2_shape": 0, "osc2_pos": 0.3, "osc2_coarse": 7, "osc2_unison": 3, "osc2_detune": 0.3, "osc2_level": -9,
+      "f_cut": 3500, "f_res": 0.2,
+      "a_a": 1.5, "a_d": 1.5, "a_s": 0.9, "a_r": 2.5,
+      "vibe": 0.15, "drift": 0.4,
+      "chorus": 0.4, "reverb": 0.5, "gain": -12
+    }},
+
+    { "name": "Pluck", "category": "Pluck", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 4, "osc1_pos": 0.5,
+      "osc2_shape": 5, "osc2_pos": 0.3, "osc2_coarse": 12, "osc2_level": -8,
+      "f_cut": 8000, "f_res": 0.3, "f_env": 0.7,
+      "a_a": 0.001, "a_d": 0.4, "a_s": 0.0, "a_r": 0.3,
+      "m_a": 0.001, "m_d": 0.2, "m_s": 0.0, "m_r": 0.2,
+      "p_env_amt": 4, "p_env_decay": 0.05,
+      "chorus": 0.2, "delay": 0.25, "delay_time": 0.3, "reverb": 0.3, "gain": -6
+    }},
+
+    { "name": "Clean Pluck", "category": "Pluck", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 1, "osc1_pos": 0.5,
+      "osc2_shape": 0, "osc2_pos": 0.3, "osc2_coarse": 12, "osc2_level": -9,
+      "f_cut": 10000, "f_res": 0.25, "f_env": 0.5,
+      "a_a": 0.001, "a_d": 0.3, "a_s": 0.0, "a_r": 0.25,
+      "m_a": 0.001, "m_d": 0.2, "m_s": 0.0, "m_r": 0.2,
+      "chorus": 0.25, "delay": 0.3, "delay_time": 0.375, "reverb": 0.3, "gain": -7
+    }},
+
+    { "name": "FM Pluck", "category": "Pluck", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 5, "osc1_pos": 0.7,
+      "osc2_shape": 5, "osc2_pos": 0.3, "osc2_coarse": 12, "osc2_level": -9,
+      "f_cut": 9000, "f_res": 0.3, "f_env": 0.6,
+      "a_a": 0.001, "a_d": 0.35, "a_s": 0.0, "a_r": 0.3,
+      "m_a": 0.001, "m_d": 0.18, "m_s": 0.0, "m_r": 0.2,
+      "p_env_amt": 6, "p_env_decay": 0.04,
+      "chorus": 0.25, "delay": 0.3, "reverb": 0.3, "gain": -8
+    }},
+
+    { "name": "Wood Pluck", "category": "Pluck", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 4, "osc1_pos": 0.7,
+      "osc2_shape": 6, "osc2_pos": 0.2, "osc2_coarse": 12, "osc2_level": -9,
+      "f_cut": 6000, "f_res": 0.4, "f_env": 0.5,
+      "a_a": 0.001, "a_d": 0.5, "a_s": 0.0, "a_r": 0.4,
+      "sat": 0.2,
+      "chorus": 0.2, "delay": 0.25, "reverb": 0.25, "gain": -7
+    }},
+
+    { "name": "Bell Pluck", "category": "Pluck", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 4, "osc1_pos": 0.4,
+      "osc2_shape": 7, "osc2_pos": 0.5, "osc2_coarse": 12, "osc2_level": -9,
+      "f_cut": 10000, "f_res": 0.25, "f_env": 0.5,
+      "a_a": 0.001, "a_d": 0.7, "a_s": 0.0, "a_r": 0.5,
+      "chorus": 0.3, "delay": 0.3, "delay_time": 0.5, "delay_fb": 0.5, "reverb": 0.35, "gain": -8
+    }},
+
+    { "name": "Soft Pluck", "category": "Pluck", "values": {
+      "osc1_on": 1, "osc2_on": 0, "osc3_on": 0,
+      "osc1_shape": 0, "osc1_pos": 0.2, "osc1_unison": 3, "osc1_detune": 0.15,
+      "f_cut": 6500, "f_res": 0.25, "f_env": 0.4,
+      "a_a": 0.002, "a_d": 0.4, "a_s": 0.0, "a_r": 0.35,
+      "chorus": 0.3, "delay": 0.25, "reverb": 0.35, "gain": -7
+    }},
+
+    { "name": "Sharp Pluck", "category": "Pluck", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 2, "osc1_pos": 0.3,
+      "osc2_shape": 1, "osc2_pos": 0.5, "osc2_fine": 7, "osc2_level": -9,
+      "f_cut": 8500, "f_res": 0.5, "f_env": 0.7,
+      "a_a": 0.001, "a_d": 0.25, "a_s": 0.0, "a_r": 0.2,
+      "m_a": 0.001, "m_d": 0.15, "m_s": 0.0, "m_r": 0.15,
+      "sat": 0.2,
+      "delay": 0.25, "reverb": 0.25, "gain": -7
+    }},
+
+    { "name": "Vapor Keys", "category": "Keys", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 0, "osc1_pos": 0.0,
+      "osc2_shape": 6, "osc2_pos": 0.4, "osc2_coarse": 12, "osc2_level": -12,
+      "f_cut": 7000, "f_res": 0.2,
+      "a_a": 0.005, "a_d": 0.6, "a_s": 0.8, "a_r": 0.6,
+      "chorus": 0.5, "delay": 0.4, "delay_time": 0.5, "delay_fb": 0.5,
+      "reverb": 0.35, "vibe": 0.15, "drift": 0.3, "gain": -8
+    }},
+
+    { "name": "Electric Keys", "category": "Keys", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 4, "osc1_pos": 0.6,
+      "osc2_shape": 0, "osc2_pos": 0.5, "osc2_fine": 4, "osc2_level": -9,
+      "f_cut": 6500, "f_res": 0.2,
+      "a_a": 0.005, "a_d": 0.6, "a_s": 0.6, "a_r": 0.5,
+      "sat": 0.2, "vibe": 0.1,
+      "chorus": 0.45, "phaser": 0.2, "delay": 0.3, "reverb": 0.35, "gain": -9
+    }},
+
+    { "name": "Vintage Stack", "category": "Keys", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 1,
+      "osc1_shape": 1, "osc1_pos": 0.4, "osc1_unison": 3, "osc1_detune": 0.2,
+      "osc2_shape": 2, "osc2_pos": 0.5, "osc2_fine": -3, "osc2_level": -7,
+      "osc3_shape": 0, "osc3_pos": 0.0, "osc3_coarse": -12, "osc3_level": -9,
+      "f_cut": 5000, "f_res": 0.25,
+      "a_a": 0.01, "a_d": 0.7, "a_s": 0.7, "a_r": 0.5,
+      "vibe": 0.2, "drift": 0.45, "sat": 0.25,
+      "chorus": 0.4, "delay": 0.25, "reverb": 0.3, "gain": -9
+    }},
+
+    { "name": "Soft Rhodes", "category": "Keys", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 4, "osc1_pos": 0.3,
+      "osc2_shape": 0, "osc2_pos": 0.0, "osc2_coarse": 12, "osc2_level": -12,
+      "f_cut": 4500, "f_res": 0.2,
+      "a_a": 0.005, "a_d": 0.8, "a_s": 0.5, "a_r": 0.5,
+      "a_vel": 0.7,
+      "chorus": 0.4, "reverb": 0.35, "delay": 0.2, "gain": -9
+    }},
+
+    { "name": "Bright Keys", "category": "Keys", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 6, "osc1_pos": 0.7,
+      "osc2_shape": 0, "osc2_pos": 0.0, "osc2_coarse": 12, "osc2_level": -12,
+      "f_cut": 10000, "f_res": 0.25,
+      "a_a": 0.005, "a_d": 0.5, "a_s": 0.7, "a_r": 0.4,
+      "chorus": 0.4, "delay": 0.3, "delay_time": 0.375, "reverb": 0.35, "gain": -9
+    }},
+
+    { "name": "Pure Sine", "category": "Keys", "values": {
+      "osc1_on": 1, "osc2_on": 0, "osc3_on": 0,
+      "osc1_shape": 0, "osc1_pos": 0.0,
+      "sub_on": 1, "sub_oct": -1, "sub_level": -15, "sub_shape": 0,
+      "f_cut": 12000, "f_res": 0.15,
+      "a_a": 0.005, "a_d": 0.4, "a_s": 0.85, "a_r": 0.5,
+      "chorus": 0.25, "reverb": 0.3, "gain": -7
+    }},
+
+    { "name": "Mellow Keys", "category": "Keys", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 0, "osc1_pos": 0.4,
+      "osc2_shape": 6, "osc2_pos": 0.2, "osc2_coarse": -12, "osc2_level": -10,
+      "f_cut": 4500, "f_res": 0.2,
+      "a_a": 0.01, "a_d": 0.7, "a_s": 0.7, "a_r": 0.6,
+      "vibe": 0.15, "drift": 0.35, "sat": 0.15,
+      "chorus": 0.45, "reverb": 0.35, "delay": 0.2, "gain": -9
+    }},
+
+    { "name": "Glass Bell", "category": "Bell", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 7, "osc1_pos": 0.4,
+      "osc2_shape": 4, "osc2_pos": 0.5, "osc2_coarse": 12, "osc2_level": -10,
+      "f_cut": 10000, "f_res": 0.2,
+      "a_a": 0.001, "a_d": 1.5, "a_s": 0.0, "a_r": 1.0,
+      "chorus": 0.3, "reverb": 0.4, "delay": 0.25, "delay_time": 0.5, "gain": -9
+    }},
+
+    { "name": "Crystal Bell", "category": "Bell", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 1,
+      "osc1_shape": 4, "osc1_pos": 0.3,
+      "osc2_shape": 4, "osc2_pos": 0.6, "osc2_coarse": 12, "osc2_level": -9,
+      "osc3_shape": 7, "osc3_pos": 0.5, "osc3_coarse": 19, "osc3_level": -12,
+      "f_cut": 12000, "f_res": 0.2,
+      "a_a": 0.001, "a_d": 2.5, "a_s": 0.0, "a_r": 1.5,
+      "chorus": 0.4, "delay": 0.35, "delay_time": 0.5, "delay_fb": 0.55,
+      "reverb": 0.5, "gain": -10
+    }},
+
+    { "name": "Toy Bell", "category": "Bell", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 4, "osc1_pos": 0.8,
+      "osc2_shape": 4, "osc2_pos": 0.3, "osc2_coarse": 24, "osc2_level": -12,
+      "f_cut": 9000, "f_res": 0.2,
+      "a_a": 0.001, "a_d": 0.8, "a_s": 0.0, "a_r": 0.6,
+      "chorus": 0.3, "delay": 0.3, "reverb": 0.35, "gain": -8
+    }},
+
+    { "name": "Tine Bell", "category": "Bell", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 4, "osc1_pos": 0.5,
+      "osc2_shape": 5, "osc2_pos": 0.5, "osc2_coarse": 12, "osc2_level": -10,
+      "f_cut": 8500, "f_res": 0.25,
+      "a_a": 0.001, "a_d": 1.2, "a_s": 0.0, "a_r": 0.8,
+      "p_env_amt": 2, "p_env_decay": 0.03,
+      "chorus": 0.35, "delay": 0.3, "reverb": 0.4, "gain": -9
+    }},
+
+    { "name": "Music Box", "category": "Bell", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 4, "osc1_pos": 0.6,
+      "osc2_shape": 7, "osc2_pos": 0.4, "osc2_coarse": 19, "osc2_level": -9,
+      "f_cut": 11000, "f_res": 0.2,
+      "a_a": 0.001, "a_d": 1.0, "a_s": 0.0, "a_r": 0.7,
+      "chorus": 0.4, "delay": 0.3, "delay_time": 0.375, "reverb": 0.45, "gain": -9
+    }},
+
+    { "name": "Hover Drone", "category": "FX", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 1,
+      "osc1_shape": 6, "osc1_pos": 0.3, "osc1_unison": 7, "osc1_detune": 0.7,
+      "osc2_shape": 3, "osc2_pos": 0.7, "osc2_coarse": 7, "osc2_unison": 5, "osc2_detune": 0.5, "osc2_level": -8,
+      "osc3_shape": 8, "osc3_pos": 0.5, "osc3_coarse": -12, "osc3_unison": 3, "osc3_detune": 0.6, "osc3_level": -10,
+      "noise_on": 1, "noise_color": 1, "noise_level": -30,
+      "f_cut": 5000, "f_res": 0.3,
+      "a_a": 2.0, "a_d": 2.0, "a_s": 1.0, "a_r": 4.0,
+      "lfo1_rate": 0.15, "lfo1_amt": 0.4,
+      "chorus": 0.7, "reverb": 0.55, "delay": 0.3,
+      "drift": 0.6, "vibe": 0.2, "gain": -12
+    }},
+
+    { "name": "Riser", "category": "FX", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 1, "osc1_pos": 0.5, "osc1_unison": 7, "osc1_detune": 0.6,
+      "osc2_shape": 6, "osc2_pos": 0.5, "osc2_unison": 5, "osc2_detune": 0.5, "osc2_level": -8,
+      "noise_on": 1, "noise_color": 0, "noise_level": -20,
+      "f_cut": 500, "f_res": 0.4, "f_env": 1.0,
+      "a_a": 0.5, "a_d": 4.0, "a_s": 0.9, "a_r": 1.5,
+      "m_a": 4.0, "m_d": 4.0, "m_s": 1.0, "m_r": 1.0,
+      "phaser": 0.5, "reverb": 0.5, "delay": 0.4, "gain": -12
+    }},
+
+    { "name": "Atmosphere", "category": "FX", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 1,
+      "osc1_shape": 3, "osc1_pos": 0.5, "osc1_unison": 7, "osc1_detune": 0.7,
+      "osc2_shape": 7, "osc2_pos": 0.5, "osc2_coarse": 7, "osc2_unison": 5, "osc2_detune": 0.5, "osc2_level": -9,
+      "osc3_shape": 8, "osc3_pos": 0.7, "osc3_coarse": 12, "osc3_unison": 3, "osc3_detune": 0.5, "osc3_level": -12,
+      "f_cut": 6000, "f_res": 0.3,
+      "a_a": 2.5, "a_d": 3.0, "a_s": 0.85, "a_r": 4.0,
+      "lfo1_rate": 0.2, "lfo1_amt": 0.5, "lfo2_rate": 0.1, "lfo2_amt": 0.4,
+      "chorus": 0.7, "phaser": 0.3, "reverb": 0.55, "delay": 0.4,
+      "drift": 0.6, "vibe": 0.2, "gain": -13
+    }},
+
+    { "name": "Texture", "category": "FX", "values": {
+      "osc1_on": 1, "osc2_on": 0, "osc3_on": 0,
+      "osc1_shape": 8, "osc1_pos": 0.7, "osc1_unison": 7, "osc1_detune": 0.7,
+      "noise_on": 1, "noise_color": 1, "noise_level": -15,
+      "f_cut": 4000, "f_res": 0.5,
+      "a_a": 1.0, "a_d": 2.0, "a_s": 0.8, "a_r": 3.0,
+      "lfo1_rate": 0.3, "lfo1_amt": 0.6,
+      "phaser": 0.5, "chorus": 0.5, "reverb": 0.5, "delay": 0.4,
+      "grit": 0.3, "drift": 0.5, "gain": -13
+    }},
+
+    { "name": "Whoosh", "category": "FX", "values": {
+      "osc1_on": 0, "osc2_on": 0, "osc3_on": 0,
+      "noise_on": 1, "noise_color": 0, "noise_level": -6,
+      "f_cut": 2000, "f_res": 0.6,
+      "a_a": 0.8, "a_d": 1.5, "a_s": 0.0, "a_r": 1.2,
+      "m_a": 0.5, "m_d": 1.5, "m_s": 0.0, "m_r": 1.0,
+      "phaser": 0.7, "reverb": 0.5, "delay": 0.3, "gain": -10
+    }},
+
+    { "name": "Sci-Fi Sweep", "category": "FX", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 8, "osc1_pos": 0.0,
+      "osc2_shape": 5, "osc2_pos": 0.5, "osc2_coarse": -12, "osc2_level": -9,
+      "f_cut": 1000, "f_res": 0.7, "f_env": 1.0,
+      "a_a": 0.5, "a_d": 3.0, "a_s": 0.8, "a_r": 1.5,
+      "m_a": 2.0, "m_d": 3.0, "m_s": 1.0, "m_r": 1.5,
+      "lfo1_rate": 0.5, "lfo1_amt": 0.6,
+      "phaser": 0.5, "reverb": 0.5, "delay": 0.45, "gain": -11
+    }},
+
+    { "name": "Arp Stab", "category": "Arp", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 1, "osc1_pos": 0.3, "osc1_unison": 3, "osc1_detune": 0.25,
+      "osc2_shape": 2, "osc2_pos": 0.5, "osc2_coarse": 12, "osc2_level": -9,
+      "f_cut": 6000, "f_res": 0.45, "f_env": 0.5,
+      "a_a": 0.001, "a_d": 0.2, "a_s": 0.0, "a_r": 0.15,
+      "m_a": 0.001, "m_d": 0.15, "m_s": 0.0, "m_r": 0.15,
+      "arp_on": 1, "arp_mode": 0, "arp_div": 2, "arp_octaves": 2, "arp_gate": 0.5,
+      "chorus": 0.3, "delay": 0.4, "delay_sync": 1, "delay_div": 2, "delay_fb": 0.5,
+      "reverb": 0.35, "gain": -9
+    }},
+
+    { "name": "Arp Sequence", "category": "Arp", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 2, "osc1_pos": 0.4,
+      "osc2_shape": 1, "osc2_pos": 0.4, "osc2_fine": 7, "osc2_level": -9,
+      "f_cut": 7000, "f_res": 0.4, "f_env": 0.4,
+      "a_a": 0.001, "a_d": 0.15, "a_s": 0.0, "a_r": 0.1,
+      "m_a": 0.001, "m_d": 0.12, "m_s": 0.0, "m_r": 0.1,
+      "arp_on": 1, "arp_mode": 2, "arp_div": 1, "arp_octaves": 2, "arp_gate": 0.4, "arp_swing": 0.1,
+      "chorus": 0.35, "delay": 0.35, "delay_sync": 1, "delay_div": 2, "reverb": 0.35, "gain": -9
+    }},
+
+    { "name": "Arp Pluck", "category": "Arp", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 4, "osc1_pos": 0.4,
+      "osc2_shape": 7, "osc2_pos": 0.5, "osc2_coarse": 12, "osc2_level": -10,
+      "f_cut": 9000, "f_res": 0.3, "f_env": 0.5,
+      "a_a": 0.001, "a_d": 0.3, "a_s": 0.0, "a_r": 0.25,
+      "arp_on": 1, "arp_mode": 2, "arp_div": 1, "arp_octaves": 2, "arp_gate": 0.35,
+      "chorus": 0.35, "delay": 0.4, "delay_sync": 1, "delay_div": 2, "delay_fb": 0.55,
+      "reverb": 0.4, "gain": -10
+    }},
+
+    { "name": "Arp Bass", "category": "Arp", "values": {
+      "osc1_on": 1, "osc2_on": 0, "osc3_on": 0,
+      "osc1_shape": 1, "osc1_pos": 0.0,
+      "sub_on": 1, "sub_oct": -1, "sub_level": -9,
+      "f_cut": 1500, "f_res": 0.5, "f_env": 0.6,
+      "a_a": 0.001, "a_d": 0.18, "a_s": 0.0, "a_r": 0.12,
+      "m_a": 0.001, "m_d": 0.15, "m_s": 0.0, "m_r": 0.1,
+      "arp_on": 1, "arp_mode": 0, "arp_div": 1, "arp_octaves": 1, "arp_gate": 0.45,
+      "sat": 0.3, "gain": -5
+    }},
+
+    { "name": "Arp Pad", "category": "Arp", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 6, "osc1_pos": 0.5, "osc1_unison": 3, "osc1_detune": 0.25,
+      "osc2_shape": 1, "osc2_pos": 0.4, "osc2_coarse": 12, "osc2_unison": 3, "osc2_detune": 0.3, "osc2_level": -10,
+      "f_cut": 5500, "f_res": 0.3, "f_env": 0.3,
+      "a_a": 0.05, "a_d": 0.5, "a_s": 0.4, "a_r": 0.6,
+      "arp_on": 1, "arp_mode": 2, "arp_div": 2, "arp_octaves": 3, "arp_gate": 0.7, "arp_latch": 1,
+      "chorus": 0.5, "delay": 0.4, "delay_sync": 1, "delay_div": 3, "reverb": 0.45, "gain": -11
+    }},
+
+    { "name": "Arp Random", "category": "Arp", "values": {
+      "osc1_on": 1, "osc2_on": 1, "osc3_on": 0,
+      "osc1_shape": 5, "osc1_pos": 0.6,
+      "osc2_shape": 7, "osc2_pos": 0.4, "osc2_coarse": 12, "osc2_level": -10,
+      "f_cut": 8000, "f_res": 0.35, "f_env": 0.4,
+      "a_a": 0.001, "a_d": 0.2, "a_s": 0.0, "a_r": 0.2,
+      "arp_on": 1, "arp_mode": 5, "arp_div": 1, "arp_octaves": 3, "arp_gate": 0.4,
+      "chorus": 0.3, "delay": 0.4, "delay_sync": 1, "delay_div": 2, "delay_fb": 0.5,
+      "reverb": 0.4, "gain": -10
+    }}
+  ]
+}

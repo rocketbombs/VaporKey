@@ -223,6 +223,11 @@ private:
     void filterMidi (juce::MidiBuffer& midi);
     void processArpeggiator (juce::MidiBuffer& midi, int numSamples);
 
+    // Silence active voices and clear FX state. Used when loading a preset so
+    // the old voices/FX tails don't ride the new parameter values and produce
+    // a loud burst (filter cracks, delay/reverb feedback into the new gain).
+    void silenceForPresetSwitch();
+
     juce::Synthesiser synth;
 
     // FX

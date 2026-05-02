@@ -38,12 +38,20 @@ juce_add_plugin(VaporKey
 
 juce_generate_juce_header(VaporKey)
 
+# Factory presets live in Source/Presets.json so future contributors can edit
+# them as plain data. JUCE bakes the file into a BinaryData blob; Presets.cpp
+# parses it lazily on first access.
+juce_add_binary_data(VaporKeyData SOURCES
+    Source/Presets.json
+)
+
 target_sources(VaporKey PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/SynthVoice.cpp
     Source/Wavetable.cpp
     Source/LookAndFeel.cpp
+    Source/Presets.cpp
 )
 
 target_compile_definitions(VaporKey PRIVATE
@@ -56,6 +64,7 @@ target_compile_definitions(VaporKey PRIVATE
 )
 
 target_link_libraries(VaporKey PRIVATE
+    VaporKeyData
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp
