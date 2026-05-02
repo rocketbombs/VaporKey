@@ -105,6 +105,11 @@ VaporKnob::VaporKnob (juce::AudioProcessorValueTreeState& s, const juce::String&
     slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 84, 22);
     slider.setName (displayName);
     slider.setColour (juce::Slider::textBoxTextColourId, Colors::textBright);
+    // Keep keyboard focus on the editor itself so the host (and any computer-
+    // keyboard MIDI input it routes through us) keeps receiving key events
+    // after the user tweaks a knob, instead of having to click the header to
+    // hand focus back.
+    slider.setWantsKeyboardFocus (false);
     addAndMakeVisible (slider);
 
     label.setText (displayName, juce::dontSendNotification);

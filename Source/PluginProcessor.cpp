@@ -911,11 +911,37 @@ const juce::String VaporKeyAudioProcessor::getProgramName (int idx)
     return {};
 }
 
+void VaporKeyAudioProcessor::silenceForPresetSwitch()
+{
+    // Hold the audio callback lock so processBlock can't run while we kill
+    // voices and clear FX buffers. Without this the old voices and the delay/
+    // reverb tail would ride the new parameter values for a few ms and
+    // produce a loud burst (filter cracks, feedback into a louder gain).
+    const juce::ScopedLock sl (getCallbackLock());
+
+    synth.allNotesOff (0, false);
+
+    delayL.reset();
+    delayR.reset();
+    delaySmoothedL.setCurrentAndTargetValue (0.0f);
+    delaySmoothedR.setCurrentAndTargetValue (0.0f);
+
+    chorusFx.reset();
+    phaserFx.reset();
+    compFx.reset();
+    eqLowL.reset();  eqLowR.reset();
+    eqMidL.reset();  eqMidR.reset();
+    eqHighL.reset(); eqHighR.reset();
+    reverbFx.reset();
+}
+
 void VaporKeyAudioProcessor::loadFactoryPreset (int index)
 {
     const auto& list = VKPresets::all();
     if (index < 0 || index >= (int) list.size()) return;
     currentProgram = index;
+
+    silenceForPresetSwitch();
 
     // Reset to defaults first by re-creating defaults from parameter ranges.
     for (auto* param : getParameters())
@@ -977,6 +1003,7 @@ bool VaporKeyAudioProcessor::loadUserPresetByName (const juce::String& name)
     if (! file.existsAsFile()) return false;
     if (auto xml = juce::XmlDocument::parse (file))
     {
+        silenceForPresetSwitch();
         apvts.replaceState (juce::ValueTree::fromXml (*xml));
         currentPresetName = name;
         currentPresetIsFactory = false;
