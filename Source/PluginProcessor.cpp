@@ -849,6 +849,28 @@ void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         const float mk = juce::Decibels::decibelsToGain (synthParams.compMakeup->load());
         if (std::abs (mk - 1.0f) > 0.001f) buffer.applyGain (mk);
     }
+
+    // Audio-reactive UI snapshots. Push the post-FX/post-master signal into
+    // the scope ring + capture peak and RMS for the meter. The editor reads
+    // these from a Timer; relaxed atomics are fine - this isn't synchronisation,
+    // just a "most recent value wins" handoff.
+    {
+        float pL = 0.0f, pR = 0.0f, sumSq = 0.0f;
+        auto write = vis.scopeWrite.load (std::memory_order_relaxed);
+        for (int i = 0; i < n; ++i)
+        {
+            const float l = L[i], r = R[i];
+            pL = juce::jmax (pL, std::abs (l));
+            pR = juce::jmax (pR, std::abs (r));
+            const float m = 0.5f * (l + r);
+            sumSq += m * m;
+            vis.scope[(write + (uint32_t) i) & VisData::kScopeMask] = m;
+        }
+        vis.scopeWrite.store (write + (uint32_t) n, std::memory_order_release);
+        vis.peakL.store (pL, std::memory_order_relaxed);
+        vis.peakR.store (pR, std::memory_order_relaxed);
+        vis.rms.store (std::sqrt (sumSq / (float) juce::jmax (1, n)), std::memory_order_relaxed);
+    }
 }
 
 juce::AudioProcessorEditor* VaporKeyAudioProcessor::createEditor()

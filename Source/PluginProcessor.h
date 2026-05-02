@@ -162,6 +162,23 @@ struct SynthParams
     float modSum[ModDest::NumDests] {};
 };
 
+// Audio-reactive UI state. The audio thread writes; the editor's timers read.
+// Plain floats are fine for the scope ring buffer (occasional tearing is
+// invisible at 60Hz repaint); the index uses a release-store so the editor
+// always sees a consistent "most recent sample index".
+struct VisData
+{
+    static constexpr int kScopeSize = 1024;     // power of two for cheap wrap
+    static constexpr int kScopeMask = kScopeSize - 1;
+
+    std::atomic<float> peakL { 0.0f };
+    std::atomic<float> peakR { 0.0f };
+    std::atomic<float> rms   { 0.0f };
+
+    float                 scope[kScopeSize] {};
+    std::atomic<uint32_t> scopeWrite { 0 };
+};
+
 class VaporKeyAudioProcessor : public juce::AudioProcessor
 {
 public:
@@ -193,6 +210,7 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
     SynthParams synthParams;
+    VisData     vis;
 
     // External (UI) helpers.
     void loadFactoryPreset (int index);

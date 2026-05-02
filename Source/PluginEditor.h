@@ -41,6 +41,76 @@ public:
 
 class VaporKeyAudioProcessor;
 
+// ----- Audio-reactive widgets -----
+
+// Stereo peak meter with falling peak hold, fed from VisData::peakL/R.
+// Vertical orientation; draws inside its own bounds.
+class LevelMeter : public juce::Component, private juce::Timer
+{
+public:
+    explicit LevelMeter (VaporKeyAudioProcessor& p);
+    void paint (juce::Graphics&) override;
+private:
+    void timerCallback() override;
+    VaporKeyAudioProcessor& processor;
+    float lvlL = 0.0f, lvlR = 0.0f;     // smoothed display level (0..1)
+    float peakL = 0.0f, peakR = 0.0f;   // falling peak markers (0..1)
+    int   peakHoldL = 0, peakHoldR = 0; // hold timer in frames
+};
+
+// Output oscilloscope. Reads the post-FX scope ring buffer from the processor
+// and traces a glowing waveform.
+class Scope : public juce::Component, private juce::Timer
+{
+public:
+    explicit Scope (VaporKeyAudioProcessor& p);
+    void paint (juce::Graphics&) override;
+private:
+    void timerCallback() override { repaint(); }
+    VaporKeyAudioProcessor& processor;
+};
+
+// Interactive 3-band EQ display: drag the Low / Mid / High nodes to set gain
+// (and Mid's frequency horizontally). The composite magnitude curve is drawn
+// underneath. Reads/writes EQ params directly via APVTS.
+class EqCurve : public juce::Component, private juce::Timer
+{
+public:
+    explicit EqCurve (juce::AudioProcessorValueTreeState& s);
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp   (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+
+private:
+    enum Node { NodeNone = -1, NodeLow = 0, NodeMid, NodeHigh };
+
+    void timerCallback() override { repaint(); }
+
+    juce::Rectangle<float> plotArea() const;
+    float xForFreq (float hz, juce::Rectangle<float> r) const;
+    float freqForX (float x,  juce::Rectangle<float> r) const;
+    float yForDb   (float db, juce::Rectangle<float> r) const;
+    float dbForY   (float y,  juce::Rectangle<float> r) const;
+
+    juce::Point<float> nodePos (Node) const;
+    Node hitTest (juce::Point<float> p) const;
+    void resetNode (Node);
+
+    float currentLowG()  const;
+    float currentMidG()  const;
+    float currentMidF()  const;
+    float currentHighG() const;
+
+    void  setParam (const juce::String& id, float value);
+    void  beginGesture (const juce::String& id);
+    void  endGesture   (const juce::String& id);
+
+    juce::AudioProcessorValueTreeState& apvts;
+    Node dragging = NodeNone;
+};
+
 // Click-drag-to-scrub wavetable display (drives the position parameter).
 // Also accepts .wav files via drag-and-drop or right-click "Load .wav..." to
 // fill the per-oscillator Custom wavetable slot.
@@ -158,7 +228,7 @@ private:
     std::unique_ptr<VaporCombo> distType;
     std::unique_ptr<VaporKnob>  chMix, chRate, chDepth;
     std::unique_ptr<VaporKnob>  phMix, phRate, phDepth, phFb;
-    std::unique_ptr<VaporKnob>  eqLow, eqMid, eqMidF, eqHigh;
+    std::unique_ptr<EqCurve>    eqCurve;
     std::unique_ptr<VaporKnob>  dlMix, dlTime, dlFb;
     std::unique_ptr<VaporToggle> dlSync;
     std::unique_ptr<VaporCombo> dlDiv;
@@ -188,6 +258,8 @@ public:
 private:
     VaporKeyAudioProcessor& proc;
     std::unique_ptr<VaporKnob> gain, width;
+    std::unique_ptr<LevelMeter> meter;
+    std::unique_ptr<Scope>      scope;
     juce::ListBox presetList;
     juce::TextButton prevBtn { "<  PREV" }, nextBtn { "NEXT  >" };
     juce::TextButton saveBtn { "SAVE" }, renameBtn { "RENAME" }, deleteBtn { "DELETE" };
@@ -215,8 +287,10 @@ private:
     void showStatus (const juce::String& msg, juce::Colour col);
 };
 
-// Top-level editor with TabbedComponent
-class VaporKeyAudioProcessorEditor : public juce::AudioProcessorEditor
+// Top-level editor with TabbedComponent. Drives a low-rate animation timer
+// that powers the starfield twinkle and the audio-reactive sun pulse.
+class VaporKeyAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                     private juce::Timer
 {
 public:
     explicit VaporKeyAudioProcessorEditor (VaporKeyAudioProcessor&);
@@ -226,9 +300,21 @@ public:
     void resized() override;
 
 private:
+    void timerCallback() override;
+    void initStars();
+    void drawStars (juce::Graphics&, juce::Rectangle<float> r);
+    void drawSun   (juce::Graphics&, juce::Rectangle<float> r);
+
     VaporKeyAudioProcessor& proc;
     VaporLookAndFeel lnf;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
+
+    std::unique_ptr<LevelMeter> headerMeter;
+
+    struct Star { float x01, y01, baseAlpha, twinkleHz, phase, radius; };
+    std::vector<Star> stars;
+    float animPhase = 0.0f;     // seconds (modulo)
+    float sunPulse  = 0.0f;     // 0..1, smoothed RMS for sun glow
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VaporKeyAudioProcessorEditor)
 };

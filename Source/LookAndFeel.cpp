@@ -70,9 +70,17 @@ void VaporLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w,
     const float cy = bounds.getCentreY();
     const float angle = rotaryStart + sliderPos * (rotaryEnd - rotaryStart);
 
-    // Outer disc
-    g.setColour (Colors::panelHi);
-    g.fillEllipse (cx - radius, cy - radius, radius * 2, radius * 2);
+    const bool isHover = s.isMouseOverOrDragging();
+    const bool isDrag  = s.isMouseButtonDown();
+    const float interactStrength = isDrag ? 1.0f : (isHover ? 0.55f : 0.0f);
+
+    // Outer disc with subtle gradient
+    {
+        juce::ColourGradient discGrad (Colors::panelHi.brighter (0.05f), cx, cy - radius,
+                                       Colors::panelHi.darker  (0.30f), cx, cy + radius, false);
+        g.setGradientFill (discGrad);
+        g.fillEllipse (cx - radius, cy - radius, radius * 2, radius * 2);
+    }
 
     // Track arc (background)
     juce::Path track;
@@ -90,13 +98,14 @@ void VaporLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w,
 
     juce::Path val;
     val.addCentredArc (cx, cy, radius - 3, radius - 3, 0.0f, rotaryStart, angle, true);
+    const float glowGain = 1.0f + interactStrength * 1.2f;
     for (int i = 4; i > 0; --i)
     {
-        g.setColour (neon.withAlpha (0.10f * (float) i));
+        g.setColour (neon.withAlpha (juce::jlimit (0.0f, 0.55f, 0.10f * (float) i * glowGain)));
         g.strokePath (val, juce::PathStrokeType ((float) i * 2.0f + 2.0f,
                        juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
-    g.setColour (neon);
+    g.setColour (neon.brighter (interactStrength * 0.2f));
     g.strokePath (val, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     // Inner disc
@@ -106,9 +115,22 @@ void VaporLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w,
     g.setGradientFill (grad);
     g.fillEllipse (cx - inner, cy - inner, inner * 2, inner * 2);
 
-    // Inner highlight ring
-    g.setColour (neon.withAlpha (0.4f));
-    g.drawEllipse (cx - inner, cy - inner, inner * 2, inner * 2, 1.0f);
+    // Inner highlight ring (brighter when interacted with)
+    g.setColour (neon.withAlpha (0.4f + interactStrength * 0.45f));
+    g.drawEllipse (cx - inner, cy - inner, inner * 2, inner * 2, 1.0f + interactStrength * 0.6f);
+
+    // Tick marks at min / max / centre to make the value-at-a-glance read easier
+    g.setColour (neon.withAlpha (0.45f));
+    auto tick = [&] (float a)
+    {
+        const float r0 = radius - 2.0f;
+        const float r1 = radius + 1.5f;
+        const float sa = std::sin (a), ca = std::cos (a);
+        g.drawLine (cx + sa * r0, cy - ca * r0, cx + sa * r1, cy - ca * r1, 1.2f);
+    };
+    tick (rotaryStart);
+    tick (rotaryEnd);
+    tick (0.5f * (rotaryStart + rotaryEnd));
 
     // Pointer
     juce::Path pointer;
@@ -117,7 +139,13 @@ void VaporLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w,
     g.setColour (neon);
     g.fillPath (pointer, juce::AffineTransform::rotation (angle).translated (cx, cy));
 
-    glowEllipse (g, juce::Rectangle<float> (cx - radius, cy - radius, radius * 2, radius * 2), neon, 1.0f);
+    // Centre cap
+    const float cap = inner * 0.18f;
+    g.setColour (neon.withAlpha (0.35f + interactStrength * 0.4f));
+    g.fillEllipse (cx - cap, cy - cap, cap * 2.0f, cap * 2.0f);
+
+    glowEllipse (g, juce::Rectangle<float> (cx - radius, cy - radius, radius * 2, radius * 2),
+                 neon, 1.0f + interactStrength * 0.8f);
 }
 
 juce::Label* VaporLookAndFeel::createSliderTextBox (juce::Slider& s)
@@ -310,11 +338,14 @@ juce::Font VaporLookAndFeel::getLabelFont (juce::Label& l)
 void VaporLookAndFeel::drawTabbedButtonBarBackground (juce::TabbedButtonBar&, juce::Graphics& g)
 {
     auto r = g.getClipBounds().toFloat();
-    juce::ColourGradient grad (Colors::panel.darker (0.4f), 0.0f, 0.0f,
+    juce::ColourGradient grad (Colors::panel.darker (0.5f), 0.0f, 0.0f,
                                Colors::panel,                0.0f, r.getHeight(), false);
     g.setGradientFill (grad);
     g.fillRect (r);
 
+    // Soft cyan highlight on top + saturated pink under-line
+    g.setColour (Colors::neonCyan.withAlpha (0.18f));
+    g.drawHorizontalLine (0, r.getX(), r.getRight());
     g.setColour (Colors::neonPink.withAlpha (0.55f));
     g.drawHorizontalLine ((int) r.getBottom() - 1, r.getX(), r.getRight());
 }
@@ -325,33 +356,61 @@ void VaporLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphics
     auto r = button.getActiveArea().toFloat();
     const bool isFront = button.isFrontTab();
 
+    // Per-tab accent so the active state colours pop differently per page.
+    const auto title = button.getButtonText();
+    juce::Colour accent = Colors::neonPink;
+    if (title.containsIgnoreCase ("FILTER"))     accent = Colors::neonCyan;
+    else if (title.containsIgnoreCase ("MOD"))   accent = Colors::neonPurple;
+    else if (title.containsIgnoreCase ("ARP"))   accent = Colors::neonGreen;
+    else if (title.containsIgnoreCase ("FX"))    accent = Colors::neonAmber;
+    else if (title.containsIgnoreCase ("MASTER"))accent = Colors::neonCyan;
+
     if (isFront)
     {
-        juce::ColourGradient grad (Colors::neonPink.withAlpha (0.30f), r.getX(), r.getY(),
-                                   Colors::panelHi2,                   r.getX(), r.getBottom(), false);
+        juce::ColourGradient grad (accent.withAlpha (0.32f), r.getX(), r.getY(),
+                                   Colors::panelHi2,         r.getX(), r.getBottom(), false);
         g.setGradientFill (grad);
         g.fillRect (r);
-        g.setColour (Colors::neonPink);
-        g.drawHorizontalLine ((int) r.getBottom() - 2, r.getX() + 2, r.getRight() - 2);
+
+        // Top accent line lights up the active page.
+        g.setColour (accent.withAlpha (0.65f));
+        g.fillRect (r.getX(), r.getY(), r.getWidth(), 2.0f);
     }
     else if (isMouseOver)
     {
         g.setColour (Colors::panelHi.withAlpha (0.6f));
         g.fillRect (r);
+        g.setColour (accent.withAlpha (0.35f));
+        g.fillRect (r.getX(), r.getY(), r.getWidth(), 1.5f);
+    }
+
+    // Small accent dot before the title gives each tab an identity.
+    const float dotR = 3.0f;
+    const float dotX = r.getX() + 14.0f;
+    const float dotY = r.getCentreY();
+    g.setColour (isFront ? accent : accent.withAlpha (0.45f));
+    g.fillEllipse (dotX - dotR, dotY - dotR, dotR * 2.0f, dotR * 2.0f);
+    if (isFront)
+    {
+        g.setColour (accent.withAlpha (0.35f));
+        g.fillEllipse (dotX - dotR - 2.0f, dotY - dotR - 2.0f, (dotR + 2.0f) * 2.0f, (dotR + 2.0f) * 2.0f);
     }
 
     g.setColour (isFront ? Colors::textBright : Colors::textDim);
     g.setFont (Fonts::tab());
-    g.drawFittedText (button.getButtonText(), r.toNearestInt(), juce::Justification::centred, 1);
+    auto textR = r.withTrimmedLeft (24.0f);
+    g.drawFittedText (button.getButtonText(), textR.toNearestInt(), juce::Justification::centredLeft, 1);
 
     if (isFront)
     {
-        // Subtle neon underline glow
+        // Subtle neon underline glow in the same accent
         for (int i = 3; i > 0; --i)
         {
-            g.setColour (Colors::neonPink.withAlpha (0.10f * (float) i));
+            g.setColour (accent.withAlpha (0.10f * (float) i));
             g.drawHorizontalLine ((int) r.getBottom() - 2 - i, r.getX() + 2, r.getRight() - 2);
         }
+        g.setColour (accent);
+        g.drawHorizontalLine ((int) r.getBottom() - 2, r.getX() + 2, r.getRight() - 2);
     }
 }
 
