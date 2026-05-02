@@ -95,6 +95,472 @@ void layoutKnobGrid (juce::Rectangle<int> area, std::vector<juce::Component*> cs
 } // namespace
 
 // =====================================================================
+// LevelMeter
+// =====================================================================
+
+LevelMeter::LevelMeter (VaporKeyAudioProcessor& p) : processor (p)
+{
+    setInterceptsMouseClicks (false, false);
+    startTimerHz (45);
+}
+
+void LevelMeter::timerCallback()
+{
+    // Pull the latest peak snapshot, decay the visible level smoothly, and
+    // hold the falling peak marker for a moment so transients are visible.
+    const float pL = juce::jmin (1.0f, processor.vis.peakL.load (std::memory_order_relaxed));
+    const float pR = juce::jmin (1.0f, processor.vis.peakR.load (std::memory_order_relaxed));
+
+    constexpr float decay = 0.78f;
+    lvlL = juce::jmax (pL, lvlL * decay);
+    lvlR = juce::jmax (pR, lvlR * decay);
+
+    if (pL >= peakL) { peakL = pL; peakHoldL = 28; }
+    else if (--peakHoldL <= 0) { peakL = juce::jmax (0.0f, peakL - 0.012f); peakHoldL = 0; }
+
+    if (pR >= peakR) { peakR = pR; peakHoldR = 28; }
+    else if (--peakHoldR <= 0) { peakR = juce::jmax (0.0f, peakR - 0.012f); peakHoldR = 0; }
+
+    repaint();
+}
+
+void LevelMeter::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (1.0f);
+    if (r.getWidth() < 6.0f || r.getHeight() < 6.0f) return;
+
+    const bool vertical = r.getHeight() > r.getWidth();
+    const float gap = 2.0f;
+    auto barL = vertical ? r.removeFromLeft (r.getWidth() * 0.5f - gap * 0.5f)
+                         : r.removeFromTop  (r.getHeight() * 0.5f - gap * 0.5f);
+    if (vertical) r.removeFromLeft (gap); else r.removeFromTop (gap);
+    auto barR = r;
+
+    auto drawBar = [&] (juce::Rectangle<float> br, float lvl, float peak)
+    {
+        // Backing
+        g.setColour (Colors::panel.darker (0.4f).withAlpha (0.85f));
+        g.fillRoundedRectangle (br, 2.5f);
+        g.setColour (Colors::neonCyan.withAlpha (0.25f));
+        g.drawRoundedRectangle (br, 2.5f, 1.0f);
+
+        // Logarithmic-ish shaping so 0.5 looks meaningful.
+        auto curveLvl  = std::pow (juce::jlimit (0.0f, 1.0f, lvl),  0.55f);
+        auto curvePeak = std::pow (juce::jlimit (0.0f, 1.0f, peak), 0.55f);
+
+        if (vertical)
+        {
+            const float h = br.getHeight() * curveLvl;
+            auto fillR = br.withTop (br.getBottom() - h);
+            juce::ColourGradient grad (Colors::neonGreen, fillR.getX(), fillR.getBottom(),
+                                       Colors::neonPink,  fillR.getX(), br.getY(), false);
+            grad.addColour (0.55, Colors::neonAmber);
+            g.setGradientFill (grad);
+            g.fillRoundedRectangle (fillR.reduced (1.0f), 2.0f);
+
+            if (peak > 0.005f)
+            {
+                const float py = br.getBottom() - br.getHeight() * curvePeak;
+                g.setColour (peak > 0.99f ? Colors::neonPink : Colors::textBright);
+                g.fillRect (br.getX() + 1.0f, py - 1.5f, br.getWidth() - 2.0f, 2.0f);
+            }
+        }
+        else
+        {
+            const float w = br.getWidth() * curveLvl;
+            auto fillR = br.withWidth (w);
+            juce::ColourGradient grad (Colors::neonGreen, br.getX(),    br.getY(),
+                                       Colors::neonPink,  br.getRight(), br.getY(), false);
+            grad.addColour (0.55, Colors::neonAmber);
+            g.setGradientFill (grad);
+            g.fillRoundedRectangle (fillR.reduced (1.0f), 2.0f);
+
+            if (peak > 0.005f)
+            {
+                const float px = br.getX() + br.getWidth() * curvePeak;
+                g.setColour (peak > 0.99f ? Colors::neonPink : Colors::textBright);
+                g.fillRect (px - 1.0f, br.getY() + 1.0f, 2.0f, br.getHeight() - 2.0f);
+            }
+        }
+    };
+
+    drawBar (barL, lvlL, peakL);
+    drawBar (barR, lvlR, peakR);
+}
+
+// =====================================================================
+// Scope
+// =====================================================================
+
+Scope::Scope (VaporKeyAudioProcessor& p) : processor (p)
+{
+    setInterceptsMouseClicks (false, false);
+    startTimerHz (30);
+}
+
+void Scope::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (1.0f);
+    if (r.getWidth() < 4.0f || r.getHeight() < 4.0f) return;
+
+    juce::ColourGradient bg (Colors::bg.darker (0.4f),  0.0f, r.getY(),
+                             Colors::panel.darker (0.2f), 0.0f, r.getBottom(), false);
+    g.setGradientFill (bg);
+    g.fillRoundedRectangle (r, 5.0f);
+
+    // Subtle grid
+    g.setColour (Colors::neonCyan.withAlpha (0.08f));
+    for (int i = 1; i < 4; ++i)
+    {
+        const float y = r.getY() + r.getHeight() * (float) i / 4.0f;
+        g.drawHorizontalLine ((int) y, r.getX() + 4.0f, r.getRight() - 4.0f);
+    }
+    for (int i = 1; i < 8; ++i)
+    {
+        const float x = r.getX() + r.getWidth() * (float) i / 8.0f;
+        g.drawVerticalLine ((int) x, r.getY() + 4.0f, r.getBottom() - 4.0f);
+    }
+
+    // Snapshot the scope buffer ending at the most recent write index.
+    constexpr int kView = 768;
+    const auto write = processor.vis.scopeWrite.load (std::memory_order_acquire);
+    const auto& buf  = processor.vis.scope;
+
+    juce::Path wave;
+    const float midY = r.getCentreY();
+    const float scaleY = r.getHeight() * 0.42f;
+    const float pad = 4.0f;
+    const float w = r.getWidth() - pad * 2.0f;
+
+    for (int i = 0; i < kView; ++i)
+    {
+        const auto idx = (write - (uint32_t) (kView - i)) & VisData::kScopeMask;
+        const float v = juce::jlimit (-1.5f, 1.5f, buf[idx]);
+        const float x = r.getX() + pad + w * (float) i / (float) (kView - 1);
+        const float y = midY - v * scaleY;
+        if (i == 0) wave.startNewSubPath (x, y);
+        else        wave.lineTo (x, y);
+    }
+
+    // Outer glow
+    for (int i = 4; i > 0; --i)
+    {
+        g.setColour (Colors::neonPink.withAlpha (0.10f * (float) i));
+        g.strokePath (wave, juce::PathStrokeType ((float) i + 0.6f, juce::PathStrokeType::curved));
+    }
+    g.setColour (Colors::neonCyan);
+    g.strokePath (wave, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved));
+
+    g.setColour (Colors::neonPink.withAlpha (0.45f));
+    g.drawRoundedRectangle (r, 5.0f, 1.0f);
+}
+
+// =====================================================================
+// EqCurve
+// =====================================================================
+// Frequency axis is log10 over 20..20000 Hz. dB axis is linear over -18..+18.
+// Hit-detection radius around each node is 18 px.
+
+namespace {
+    constexpr float kEqMinHz = 20.0f;
+    constexpr float kEqMaxHz = 20000.0f;
+    constexpr float kEqDbRange = 18.0f;
+    constexpr float kEqLowFc  = 200.0f;
+    constexpr float kEqHighFc = 5000.0f;
+    constexpr double kEqVisSr = 48000.0;
+    constexpr float kNodeRadius = 9.0f;
+    constexpr float kHitRadius  = 18.0f;
+}
+
+EqCurve::EqCurve (juce::AudioProcessorValueTreeState& s) : apvts (s)
+{
+    startTimerHz (30);
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
+}
+
+juce::Rectangle<float> EqCurve::plotArea() const
+{
+    return getLocalBounds().toFloat().reduced (12.0f, 14.0f);
+}
+
+float EqCurve::xForFreq (float hz, juce::Rectangle<float> r) const
+{
+    const float t = (std::log10 (juce::jlimit (kEqMinHz, kEqMaxHz, hz)) - std::log10 (kEqMinHz))
+                    / (std::log10 (kEqMaxHz) - std::log10 (kEqMinHz));
+    return r.getX() + r.getWidth() * t;
+}
+float EqCurve::freqForX (float x, juce::Rectangle<float> r) const
+{
+    const float t = juce::jlimit (0.0f, 1.0f, (x - r.getX()) / juce::jmax (1.0f, r.getWidth()));
+    const float lg = std::log10 (kEqMinHz) + t * (std::log10 (kEqMaxHz) - std::log10 (kEqMinHz));
+    return std::pow (10.0f, lg);
+}
+float EqCurve::yForDb (float db, juce::Rectangle<float> r) const
+{
+    const float t = juce::jlimit (-1.0f, 1.0f, db / kEqDbRange);
+    return r.getCentreY() - t * r.getHeight() * 0.5f;
+}
+float EqCurve::dbForY (float y, juce::Rectangle<float> r) const
+{
+    const float t = juce::jlimit (-1.0f, 1.0f, (r.getCentreY() - y) / (r.getHeight() * 0.5f));
+    return t * kEqDbRange;
+}
+
+float EqCurve::currentLowG()  const { auto* p = apvts.getRawParameterValue ("eq_low");      return p ? p->load() : 0.0f; }
+float EqCurve::currentMidG()  const { auto* p = apvts.getRawParameterValue ("eq_mid");      return p ? p->load() : 0.0f; }
+float EqCurve::currentMidF()  const { auto* p = apvts.getRawParameterValue ("eq_mid_freq"); return p ? p->load() : 1000.0f; }
+float EqCurve::currentHighG() const { auto* p = apvts.getRawParameterValue ("eq_high");     return p ? p->load() : 0.0f; }
+
+juce::Point<float> EqCurve::nodePos (Node n) const
+{
+    auto r = plotArea();
+    switch (n)
+    {
+        case NodeLow:  return { xForFreq (kEqLowFc,        r), yForDb (currentLowG(),  r) };
+        case NodeMid:  return { xForFreq (currentMidF(),   r), yForDb (currentMidG(),  r) };
+        case NodeHigh: return { xForFreq (kEqHighFc,       r), yForDb (currentHighG(), r) };
+        default:       return {};
+    }
+}
+
+EqCurve::Node EqCurve::hitTest (juce::Point<float> p) const
+{
+    Node best = NodeNone;
+    float bestD = kHitRadius;
+    for (Node n : { NodeLow, NodeMid, NodeHigh })
+    {
+        const float d = nodePos (n).getDistanceFrom (p);
+        if (d < bestD) { bestD = d; best = n; }
+    }
+    return best;
+}
+
+void EqCurve::beginGesture (const juce::String& id)
+{
+    if (auto* p = apvts.getParameter (id))
+        p->beginChangeGesture();
+}
+void EqCurve::endGesture (const juce::String& id)
+{
+    if (auto* p = apvts.getParameter (id))
+        p->endChangeGesture();
+}
+void EqCurve::setParam (const juce::String& id, float value)
+{
+    if (auto* p = apvts.getParameter (id))
+    {
+        const auto& range = p->getNormalisableRange();
+        const float norm = range.convertTo0to1 (juce::jlimit (range.start, range.end, value));
+        p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, norm));
+    }
+}
+
+void EqCurve::resetNode (Node n)
+{
+    auto reset = [&] (const juce::String& id) {
+        if (auto* p = apvts.getParameter (id))
+        {
+            p->beginChangeGesture();
+            p->setValueNotifyingHost (p->getDefaultValue());
+            p->endChangeGesture();
+        }
+    };
+    if (n == NodeLow)  reset ("eq_low");
+    if (n == NodeHigh) reset ("eq_high");
+    if (n == NodeMid)  { reset ("eq_mid"); reset ("eq_mid_freq"); }
+}
+
+void EqCurve::mouseDown (const juce::MouseEvent& e)
+{
+    auto p = e.position;
+    auto n = hitTest (p);
+    if (e.mods.isPopupMenu()) { if (n != NodeNone) resetNode (n); return; }
+
+    if (n == NodeNone)
+    {
+        // Click in empty space picks the closest band by frequency.
+        const float fx = freqForX (p.x, plotArea());
+        n = (fx < 700.0f)   ? NodeLow
+          : (fx < 2500.0f)  ? NodeMid
+          : NodeHigh;
+    }
+
+    dragging = n;
+    if (n == NodeLow)  beginGesture ("eq_low");
+    if (n == NodeHigh) beginGesture ("eq_high");
+    if (n == NodeMid)
+    {
+        if (auto* a = apvts.getParameter ("eq_mid"))      a->beginChangeGesture();
+        if (auto* a = apvts.getParameter ("eq_mid_freq")) a->beginChangeGesture();
+    }
+    mouseDrag (e);
+}
+
+void EqCurve::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragging == NodeNone) return;
+    auto r = plotArea();
+    const float db = dbForY (e.position.y, r);
+    if (dragging == NodeLow)  setParam ("eq_low",  db);
+    if (dragging == NodeHigh) setParam ("eq_high", db);
+    if (dragging == NodeMid)
+    {
+        setParam ("eq_mid",      db);
+        setParam ("eq_mid_freq", freqForX (e.position.x, r));
+    }
+}
+
+void EqCurve::mouseUp (const juce::MouseEvent&)
+{
+    if (dragging == NodeLow)  endGesture ("eq_low");
+    if (dragging == NodeHigh) endGesture ("eq_high");
+    if (dragging == NodeMid)
+    {
+        if (auto* a = apvts.getParameter ("eq_mid"))      a->endChangeGesture();
+        if (auto* a = apvts.getParameter ("eq_mid_freq")) a->endChangeGesture();
+    }
+    dragging = NodeNone;
+}
+
+void EqCurve::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    auto n = hitTest (e.position);
+    if (n != NodeNone) { resetNode (n); return; }
+    resetNode (NodeLow); resetNode (NodeMid); resetNode (NodeHigh);
+}
+
+void EqCurve::paint (juce::Graphics& g)
+{
+    auto outer = getLocalBounds().toFloat();
+    auto r = plotArea();
+
+    // Background
+    juce::ColourGradient bg (Colors::bg.darker (0.3f), 0.0f, r.getY(),
+                             Colors::panel.darker (0.1f), 0.0f, r.getBottom(), false);
+    g.setGradientFill (bg);
+    g.fillRoundedRectangle (r, 6.0f);
+
+    // dB grid
+    g.setColour (Colors::neonCyan.withAlpha (0.10f));
+    for (int db : { -12, -6, 6, 12 })
+    {
+        const float y = yForDb ((float) db, r);
+        g.drawHorizontalLine ((int) y, r.getX() + 4.0f, r.getRight() - 4.0f);
+    }
+    g.setColour (Colors::neonCyan.withAlpha (0.22f));
+    g.drawHorizontalLine ((int) r.getCentreY(), r.getX() + 4.0f, r.getRight() - 4.0f);
+
+    // Frequency grid (octaves)
+    const float labelHzs[] = { 50.0f, 100.0f, 250.0f, 500.0f, 1000.0f, 2500.0f, 5000.0f, 10000.0f };
+    g.setColour (Colors::neonCyan.withAlpha (0.10f));
+    for (float hz : labelHzs)
+    {
+        const float x = xForFreq (hz, r);
+        g.drawVerticalLine ((int) x, r.getY() + 4.0f, r.getBottom() - 4.0f);
+    }
+
+    // Frequency labels
+    g.setColour (Colors::textDim);
+    g.setFont (Fonts::small());
+    for (float hz : { 100.0f, 1000.0f, 10000.0f })
+    {
+        const auto label = hz >= 1000.0f
+            ? juce::String (juce::roundToInt (hz / 1000.0f)) + "k"
+            : juce::String (juce::roundToInt (hz));
+        const float x = xForFreq (hz, r);
+        g.drawText (label, (int) (x - 18.0f), (int) outer.getBottom() - 14, 36, 12,
+                    juce::Justification::centred);
+    }
+
+    // Compute composite magnitude curve via real IIR coefficients.
+    using Coef = juce::dsp::IIR::Coefficients<float>;
+    const float lowG  = currentLowG();
+    const float midG  = currentMidG();
+    const float midF  = currentMidF();
+    const float highG = currentHighG();
+
+    auto cLow  = Coef::makeLowShelf  (kEqVisSr, kEqLowFc,  0.707f, juce::Decibels::decibelsToGain (lowG));
+    auto cMid  = Coef::makePeakFilter (kEqVisSr, midF,      0.8f,   juce::Decibels::decibelsToGain (midG));
+    auto cHigh = Coef::makeHighShelf (kEqVisSr, kEqHighFc, 0.707f, juce::Decibels::decibelsToGain (highG));
+
+    juce::Path curve;
+    juce::Path fill;
+    const int N = juce::jmax (32, (int) r.getWidth());
+    for (int i = 0; i < N; ++i)
+    {
+        const float t = (float) i / (float) (N - 1);
+        const float x = r.getX() + r.getWidth() * t;
+        const float hz = freqForX (x, r);
+        const double mag = cLow ->getMagnitudeForFrequency ((double) hz, kEqVisSr)
+                         * cMid ->getMagnitudeForFrequency ((double) hz, kEqVisSr)
+                         * cHigh->getMagnitudeForFrequency ((double) hz, kEqVisSr);
+        const float db = juce::Decibels::gainToDecibels ((float) mag, -60.0f);
+        const float y = yForDb (db, r);
+        if (i == 0) { curve.startNewSubPath (x, y); fill.startNewSubPath (x, r.getCentreY()); fill.lineTo (x, y); }
+        else        { curve.lineTo (x, y); fill.lineTo (x, y); }
+    }
+    fill.lineTo (r.getRight(), r.getCentreY());
+    fill.closeSubPath();
+
+    // Filled glow under curve
+    juce::ColourGradient cg (Colors::neonCyan.withAlpha (0.30f), r.getX(), r.getCentreY(),
+                             Colors::neonPink.withAlpha (0.08f), r.getX(), r.getY(), false);
+    g.setGradientFill (cg);
+    g.fillPath (fill);
+
+    // Outer glow stroke
+    for (int i = 4; i > 0; --i)
+    {
+        g.setColour (Colors::neonCyan.withAlpha (0.10f * (float) i));
+        g.strokePath (curve, juce::PathStrokeType ((float) i + 0.5f, juce::PathStrokeType::curved));
+    }
+    g.setColour (Colors::neonCyan);
+    g.strokePath (curve, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved));
+
+    // Outline
+    g.setColour (Colors::neonPink.withAlpha (0.45f));
+    g.drawRoundedRectangle (r, 6.0f, 1.0f);
+
+    // Nodes
+    auto drawNode = [&] (Node n, juce::Colour col, const juce::String& letter)
+    {
+        const auto pt = nodePos (n);
+        const bool isDrag = (dragging == n);
+        const float rad = isDrag ? kNodeRadius + 2.0f : kNodeRadius;
+
+        // Glow
+        for (int i = 4; i > 0; --i)
+            g.setColour (col.withAlpha ((isDrag ? 0.16f : 0.08f) * (float) i)),
+            g.fillEllipse (pt.x - rad - (float) i, pt.y - rad - (float) i,
+                           (rad + (float) i) * 2.0f, (rad + (float) i) * 2.0f);
+
+        // Body
+        juce::ColourGradient grad (col.brighter (0.4f), pt.x, pt.y - rad,
+                                   col.darker (0.3f),   pt.x, pt.y + rad, false);
+        g.setGradientFill (grad);
+        g.fillEllipse (pt.x - rad, pt.y - rad, rad * 2.0f, rad * 2.0f);
+
+        g.setColour (Colors::textBright);
+        g.setFont (Fonts::small());
+        g.drawText (letter, (int) (pt.x - 8.0f), (int) (pt.y - 7.0f), 16, 14,
+                    juce::Justification::centred);
+    };
+    drawNode (NodeLow,  Colors::neonGreen,  "L");
+    drawNode (NodeMid,  Colors::neonAmber,  "M");
+    drawNode (NodeHigh, Colors::neonPink,   "H");
+
+    // Mini readout in the top-right corner
+    g.setColour (Colors::textDim);
+    g.setFont (Fonts::small());
+    auto fmtDb = [] (float v) { return (v >= 0 ? "+" : "") + juce::String (v, 1) + " dB"; };
+    auto fmtHz = [] (float v) { return v >= 1000.0f ? juce::String (v / 1000.0f, 1) + " kHz"
+                                                    : juce::String (juce::roundToInt (v)) + " Hz"; };
+    juce::String head = "L " + fmtDb (lowG) + "   M " + fmtDb (midG) + " @ " + fmtHz (midF) + "   H " + fmtDb (highG);
+    g.drawText (head, (int) r.getX() + 6, (int) r.getY() + 4, (int) r.getWidth() - 12, 14,
+                juce::Justification::right);
+}
+
+// =====================================================================
 // VaporKnob
 // =====================================================================
 
@@ -816,10 +1282,7 @@ FxPage::FxPage (VaporKeyAudioProcessor& p)
     phDepth = std::make_unique<VaporKnob> (p.apvts, "phaser_depth", "Depth"); addAndMakeVisible (*phDepth);
     phFb    = std::make_unique<VaporKnob> (p.apvts, "phaser_fb",    "FB");    addAndMakeVisible (*phFb);
 
-    eqLow   = std::make_unique<VaporKnob> (p.apvts, "eq_low",      "Low");  addAndMakeVisible (*eqLow);
-    eqMid   = std::make_unique<VaporKnob> (p.apvts, "eq_mid",      "Mid");  addAndMakeVisible (*eqMid);
-    eqMidF  = std::make_unique<VaporKnob> (p.apvts, "eq_mid_freq", "Freq"); addAndMakeVisible (*eqMidF);
-    eqHigh  = std::make_unique<VaporKnob> (p.apvts, "eq_high",     "High"); addAndMakeVisible (*eqHigh);
+    eqCurve = std::make_unique<EqCurve> (p.apvts); addAndMakeVisible (*eqCurve);
 
     dlMix   = std::make_unique<VaporKnob>   (p.apvts, "delay",      "Mix");  addAndMakeVisible (*dlMix);
     dlTime  = std::make_unique<VaporKnob>   (p.apvts, "delay_time", "Time"); addAndMakeVisible (*dlTime);
@@ -892,7 +1355,10 @@ void FxPage::resized()
     const int w2 = row2.getWidth();
     juce::Rectangle<int> sEq    (row2.getX(),                    row2.getY(), w2 / 2 - 5, row2.getHeight());
     juce::Rectangle<int> sDly   (row2.getX() + w2 / 2 + 5,       row2.getY(), w2 / 2 - 5, row2.getHeight());
-    layoutKnobRow (sEq,  { eqLow.get(), eqMid.get(), eqMidF.get(), eqHigh.get() });
+    {
+        auto a = sEq; a.removeFromTop (kSectionTitleH); a.reduce (10, 8);
+        eqCurve->setBounds (a);
+    }
     {
         auto a = sDly; a.removeFromTop (kSectionTitleH); a.reduce (10, 8);
         auto top1 = a.removeFromTop (40);
@@ -1185,6 +1651,8 @@ MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
 {
     gain  = std::make_unique<VaporKnob> (p.apvts, "gain",  "Master"); addAndMakeVisible (*gain);
     width = std::make_unique<VaporKnob> (p.apvts, "width", "Width");  addAndMakeVisible (*width);
+    meter = std::make_unique<LevelMeter> (p);                          addAndMakeVisible (*meter);
+    scope = std::make_unique<Scope>      (p);                          addAndMakeVisible (*scope);
 
     presetLabel.setText ("PRESETS", juce::dontSendNotification);
     presetLabel.setFont (Fonts::section());
@@ -1352,13 +1820,21 @@ void MasterPage::resized()
         tagline.setBounds (a.removeFromTop (22));
         a.removeFromTop (10);
 
+        // Output scope across the top of the right column.
+        scope->setBounds (a.removeFromTop (110));
+        a.removeFromTop (10);
+
+        // Master and width knobs on the left, vertical stereo meter on the right.
         auto knobRow = a.removeFromTop (140);
+        auto meterArea = knobRow.removeFromRight (52);
+        meter->setBounds (meterArea.reduced (4, 6));
+        knobRow.removeFromRight (8);
         const int kw = juce::jmin (170, knobRow.getWidth() / 2);
         gain ->setBounds (knobRow.removeFromLeft (kw));
         knobRow.removeFromLeft (8);
         width->setBounds (knobRow.removeFromLeft (kw));
 
-        a.removeFromTop (16);
+        a.removeFromTop (12);
         copy.setBounds (a);
     }
 }
@@ -1385,6 +1861,12 @@ VaporKeyAudioProcessorEditor::VaporKeyAudioProcessorEditor (VaporKeyAudioProcess
     tabs.setColour (juce::TabbedComponent::outlineColourId,    juce::Colours::transparentBlack);
     addAndMakeVisible (tabs);
 
+    headerMeter = std::make_unique<LevelMeter> (proc);
+    addAndMakeVisible (*headerMeter);
+
+    initStars();
+    startTimerHz (45);   // backdrop animation + sun pulse
+
     setResizable (true, true);
     setResizeLimits (1100, 680, 1920, 1200);
     setSize (1280, 800);
@@ -1395,46 +1877,132 @@ VaporKeyAudioProcessorEditor::~VaporKeyAudioProcessorEditor()
     setLookAndFeel (nullptr);
 }
 
+void VaporKeyAudioProcessorEditor::initStars()
+{
+    juce::Random rng (0xCAFEF00D);
+    stars.clear();
+    stars.reserve (90);
+    for (int i = 0; i < 90; ++i)
+    {
+        Star s;
+        s.x01 = rng.nextFloat();
+        // Concentrate in the upper "sky" portion of the editor.
+        s.y01 = std::pow (rng.nextFloat(), 1.6f) * 0.55f;
+        s.baseAlpha = 0.25f + 0.6f * rng.nextFloat();
+        s.twinkleHz = 0.4f + 1.6f * rng.nextFloat();
+        s.phase     = rng.nextFloat() * juce::MathConstants<float>::twoPi;
+        s.radius    = 0.6f + 1.4f * rng.nextFloat();
+        stars.push_back (s);
+    }
+}
+
+void VaporKeyAudioProcessorEditor::timerCallback()
+{
+    animPhase += 1.0f / 45.0f;
+    if (animPhase > 1.0e6f) animPhase = 0.0f;
+
+    // Smooth a small sun pulse from the live RMS so the sun gently breathes
+    // with the audio.
+    const float rms = juce::jlimit (0.0f, 1.0f, proc.vis.rms.load (std::memory_order_relaxed));
+    const float target = std::pow (rms, 0.6f);
+    sunPulse += (target - sunPulse) * 0.12f;
+
+    repaint();
+}
+
+void VaporKeyAudioProcessorEditor::drawStars (juce::Graphics& g, juce::Rectangle<float> r)
+{
+    for (const auto& s : stars)
+    {
+        const float a = juce::jlimit (0.0f, 1.0f,
+            s.baseAlpha * (0.6f + 0.4f * std::sin (animPhase * s.twinkleHz * juce::MathConstants<float>::twoPi + s.phase)));
+        g.setColour (juce::Colours::white.withAlpha (a));
+        const float x = r.getX() + r.getWidth() * s.x01;
+        const float y = r.getY() + r.getHeight() * s.y01;
+        g.fillEllipse (x - s.radius, y - s.radius, s.radius * 2.0f, s.radius * 2.0f);
+    }
+}
+
+void VaporKeyAudioProcessorEditor::drawSun (juce::Graphics& g, juce::Rectangle<float> r)
+{
+    const float cx = r.getCentreX();
+    const float cy = r.getY() + 64.0f;
+    const float baseRad = 64.0f;
+    const float pulse = sunPulse * 0.5f;
+
+    // Outer atmospheric halo - reacts to RMS.
+    for (int i = 8; i > 0; --i)
+    {
+        const float k = (float) i;
+        const float rr = baseRad + k * 6.0f + pulse * 26.0f;
+        g.setColour (juce::Colour (0xffff2ec4).withAlpha (0.025f * k * (0.6f + 0.7f * sunPulse)));
+        g.fillEllipse (cx - rr, cy - rr, rr * 2.0f, rr * 2.0f);
+    }
+
+    // Sun body: warm-to-pink radial gradient
+    juce::ColourGradient sun (juce::Colour (0xffffd166), cx, cy - baseRad,
+                              juce::Colour (0xffff2ec4), cx, cy + baseRad, false);
+    g.setGradientFill (sun);
+    g.fillEllipse (cx - baseRad, cy - baseRad, baseRad * 2.0f, baseRad * 2.0f);
+
+    // Horizontal slats (synthwave sun)
+    g.setColour (juce::Colour (0xff05010f));
+    for (int i = 0; i < 6; ++i)
+        g.fillRect (cx - baseRad, cy + (float) i * 6.0f - 6.0f, baseRad * 2.0f, 2.5f);
+
+    // Reactive bright rim
+    g.setColour (juce::Colour (0xffffd166).withAlpha (0.6f + 0.4f * sunPulse));
+    g.drawEllipse (cx - baseRad, cy - baseRad, baseRad * 2.0f, baseRad * 2.0f, 1.4f);
+}
+
 void VaporKeyAudioProcessorEditor::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
     drawVaporBackdrop (g, r);
+    drawStars (g, r);
+    drawSun   (g, r);
 
-    // Sun
+    // Title with subtle outer glow
+    auto drawWithGlow = [&] (const juce::String& s, int x, int y, int w, int h, juce::Colour col)
     {
-        const float cx = r.getCentreX();
-        const float cy = r.getY() + 64.0f;
-        const float rad = 64.0f;
-        juce::ColourGradient sun (juce::Colour (0xffffd166), cx, cy - rad,
-                                  juce::Colour (0xffff2ec4), cx, cy + rad, false);
-        g.setGradientFill (sun);
-        g.fillEllipse (cx - rad, cy - rad, rad * 2.0f, rad * 2.0f);
-        g.setColour (juce::Colour (0xff05010f));
-        for (int i = 0; i < 6; ++i)
-            g.fillRect (cx - rad, cy + (float) i * 6.0f - 6.0f, rad * 2.0f, 2.5f);
-    }
+        for (int i = 3; i > 0; --i)
+        {
+            g.setColour (col.withAlpha (0.10f * (float) i));
+            g.drawText (s, x - i, y - i, w, h, juce::Justification::left);
+            g.drawText (s, x + i, y + i, w, h, juce::Justification::left);
+        }
+        g.setColour (col);
+        g.drawText (s, x, y, w, h, juce::Justification::left);
+    };
 
-    // Title
-    g.setColour (Colors::neonCyan);
     g.setFont (juce::Font (juce::FontOptions (38.0f).withStyle ("Bold")));
-    g.drawText ("VAPOR", 28, 14, 220, 46, juce::Justification::left);
-    g.setColour (Colors::neonPink);
-    g.drawText ("KEY",   158, 14, 220, 46, juce::Justification::left);
+    drawWithGlow ("VAPOR", 28, 14, 220, 46, Colors::neonCyan);
+    drawWithGlow ("KEY",   158, 14, 220, 46, Colors::neonPink);
 
     g.setColour (Colors::textDim);
     g.setFont (Fonts::small());
-    g.drawText ("WAVETABLE  /  SYNTHESIZER  /  v0.3", 28, 56, 360, 14, juce::Justification::left);
+    g.drawText ("WAVETABLE  /  SYNTHESIZER  /  v0.4", 28, 56, 360, 14, juce::Justification::left);
 
-    // Top-right neon line
+    // Top-right neon lines + "OUTPUT" tag above the meter
     g.setColour (Colors::neonPink.withAlpha (0.6f));
     g.drawHorizontalLine (72, (float) getWidth() - 220.0f, (float) getWidth() - 28.0f);
     g.setColour (Colors::neonCyan.withAlpha (0.6f));
     g.drawHorizontalLine (76, (float) getWidth() - 200.0f, (float) getWidth() - 28.0f);
+
+    g.setColour (Colors::textDim);
+    g.setFont (Fonts::small());
+    g.drawText ("OUTPUT", getWidth() - 220, 16, 60, 12, juce::Justification::left);
 }
 
 void VaporKeyAudioProcessorEditor::resized()
 {
     auto r = getLocalBounds();
-    r.removeFromTop (76); // header
+    auto header = r.removeFromTop (76);
+
+    // Stereo meter strip in the top-right of the header.
+    auto meterR = juce::Rectangle<int> (header.getWidth() - 156, 30,
+                                        128, 28);
+    if (headerMeter) headerMeter->setBounds (meterR);
+
     tabs.setBounds (r.reduced (8));
 }
