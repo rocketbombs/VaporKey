@@ -5,10 +5,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Build-wide flags. We deliberately do NOT enable -ffast-math / /fp:fast: the
+# audio path relies on IEEE-754 semantics + juce::ScopedNoDenormals (see
+# PluginProcessor::processBlock) and per-stage denormal guards in FxChain.
+# Per-target warning levels live on the targets below so JUCE's own
+# translation units don't get pulled into our stricter set.
 if(MSVC)
-    add_compile_options(/W3 /MP /fp:fast)
-else()
-    add_compile_options(-Wall -Wno-unused-parameter -ffast-math)
+    add_compile_options(/MP)
 endif()
 
 include(FetchContent)
@@ -90,6 +93,15 @@ target_link_libraries(VaporKey PRIVATE
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
+
+# Stricter warnings on VaporKey's own sources only. juce_recommended_warning_flags
+# above provides the JUCE-blessed baseline; layering extras at the target scope
+# keeps them off JUCE's own translation units. -Wconversion will surface a fair
+# number of float<->double promotions in DSP code; if the noise becomes
+# unacceptable, drop it and rely on -Wshadow alone.
+if(NOT MSVC)
+    target_compile_options(VaporKey PRIVATE -Wshadow -Wconversion)
+endif()
 
 # Preset linter: validates Source/Presets.json against the parameter registry
 # exposed by Parameters.h. Run as:

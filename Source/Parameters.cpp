@@ -32,6 +32,17 @@ namespace
 
     std::vector<Entry> buildRegistry()
     {
+        // Each enum/names() pair below is hand-maintained. Assert they stay
+        // in sync so adding a new entry without updating its display strings
+        // fails immediately at startup instead of silently shifting the
+        // choice list under every popup.
+        jassert (ModDest::names().size()    == ModDest::NumDests);
+        jassert (LfoShape::names().size()   == LfoShape::NumShapes);
+        jassert (SubShape::names().size()   == SubShape::NumShapes);
+        jassert (NoiseColor::names().size() == NoiseColor::NumColors);
+        jassert (DistType::names().size()   == DistType::NumTypes);
+        jassert (ArpMode::names().size()    == ArpMode::NumModes);
+
         std::vector<Entry> r;
         r.reserve (160);
 
