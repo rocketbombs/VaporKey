@@ -20,6 +20,12 @@ void VaporKeyAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     engine.prepare (sampleRate, samplesPerBlock);
     arp.prepare (sampleRate);
     fx.prepare (sampleRate, samplesPerBlock);
+
+    // Reserve scratch capacity for the mono-output mixdown path: processBlock
+    // only ever clamps the logical size down to the current block's samples,
+    // never expands beyond what we allocate here.
+    stereoScratch.setSize (2, samplesPerBlock, false, false, false);
+    stereoScratch.clear();
 }
 
 bool VaporKeyAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -40,28 +46,42 @@ void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
     synthParams.bpm.store (currentBpm);
 
+    const int outCh = buffer.getNumChannels();
+    if (outCh < 1) return;
+    const int n = buffer.getNumSamples();
+
+    // Synth and FX always operate on a stereo buffer. When the host has
+    // selected a mono output we point them at stereoScratch instead of the
+    // host buffer and mix down at the end - that way the per-stage code
+    // (distortion, EQ, delay, width) never has to handle aliased L == R, and
+    // mono really is the average of L+R rather than a doubled-up monoised
+    // mess. setSize with avoidReallocating=true is allocation-free as long
+    // as the host honours samplesPerBlock from prepareToPlay.
+    const bool isMonoOut = (outCh < 2);
+    if (isMonoOut)
+        stereoScratch.setSize (2, n, false, false, true);
+    juce::AudioBuffer<float>& work = isMonoOut ? stereoScratch : buffer;
+
     // Arpeggiator runs first: it consumes incoming note-on/off events and emits
     // a stepped sequence into the buffer. Mono/legato handling inside the
     // engine then operates on whatever notes flow through (live or arpeggiated).
-    arp.process (midi, buffer.getNumSamples(), currentBpm);
+    arp.process (midi, n, currentBpm);
 
     // Engine runs the MIDI-controller scan, sums macros (so this block's
     // CC1/aftertouch land in modSum), and renders all voices.
-    engine.process (buffer, midi);
+    engine.process (work, midi);
 
     // Per-block FX chain.
-    fx.process (buffer, currentBpm);
+    fx.process (work, currentBpm);
 
     // Audio-reactive UI snapshots. Push the post-FX/post-master signal into
-    // the scope ring + capture peak and RMS for the meter. The editor reads
-    // these from a Timer; relaxed atomics are fine - this isn't synchronisation,
-    // just a "most recent value wins" handoff.
-    const int numCh = buffer.getNumChannels();
-    if (numCh < 1) return;
-    const int n = buffer.getNumSamples();
-    auto* L = buffer.getWritePointer (0);
-    auto* R = numCh > 1 ? buffer.getWritePointer (1) : L;
-
+    // the scope ring + capture peak and RMS for the meter. We read from
+    // `work` (always stereo) so the meter shows the synth's actual L/R image
+    // even when the host bus is mono. The editor reads these from a Timer;
+    // relaxed atomics are fine - this isn't synchronisation, just a "most
+    // recent value wins" handoff.
+    auto* L = work.getWritePointer (0);
+    auto* R = work.getWritePointer (1);
     float pL = 0.0f, pR = 0.0f, sumSq = 0.0f;
     auto write = vis.scopeWrite.load (std::memory_order_relaxed);
     for (int i = 0; i < n; ++i)
@@ -77,6 +97,14 @@ void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     vis.peakL.store (pL, std::memory_order_relaxed);
     vis.peakR.store (pR, std::memory_order_relaxed);
     vis.rms.store (std::sqrt (sumSq / (float) juce::jmax (1, n)), std::memory_order_relaxed);
+
+    // Mono mixdown: average L+R into the host's single output channel.
+    if (isMonoOut)
+    {
+        auto* outMono = buffer.getWritePointer (0);
+        for (int i = 0; i < n; ++i)
+            outMono[i] = 0.5f * (L[i] + R[i]);
+    }
 }
 
 juce::AudioProcessorEditor* VaporKeyAudioProcessor::createEditor()

@@ -76,11 +76,15 @@ void FxChain::reset()
 
 void FxChain::process (juce::AudioBuffer<float>& buffer, double currentBpm)
 {
-    const int numCh = buffer.getNumChannels();
-    if (numCh < 1) return;
+    // Like the voice render, FX assumes a stereo buffer; the processor
+    // renders into an internal stereo scratch for mono output buses and
+    // mixes down at the boundary, so distortion / EQ / delay / width never
+    // run with aliased L == R (which would double-process the same samples
+    // and break the mono signal).
+    jassert (buffer.getNumChannels() == 2);
 
     auto* L = buffer.getWritePointer (0);
-    auto* R = numCh > 1 ? buffer.getWritePointer (1) : L;
+    auto* R = buffer.getWritePointer (1);
     const int n = buffer.getNumSamples();
 
     // Distortion

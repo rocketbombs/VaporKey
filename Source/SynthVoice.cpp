@@ -163,9 +163,13 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
     filterL.setResonance (fRes);
     filterR.setResonance (fRes);
 
-    const int numCh = juce::jmin (2, outputBuffer.getNumChannels());
+    // The processor always hands us a stereo buffer (its own when the host
+    // bus is stereo, an internal scratch when the bus is mono). The voice
+    // can therefore treat L and R as independent channels - any mono mixdown
+    // is the processor's job at the processBlock boundary.
+    jassert (outputBuffer.getNumChannels() >= 2);
     auto* outL = outputBuffer.getWritePointer (0, startSample);
-    auto* outR = numCh > 1 ? outputBuffer.getWritePointer (1, startSample) : outL;
+    auto* outR = outputBuffer.getWritePointer (1, startSample);
 
     struct OP {
         bool on; int shape; float pos; float lin; float panL, panR;

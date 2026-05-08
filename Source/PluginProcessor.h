@@ -92,6 +92,13 @@ private:
     double currentBpm = 120.0;
     int currentProgram = 0;
 
+    // The synth + FX path is internally stereo (oscillators have pan, FX is
+    // stereo). When the host has selected a mono output bus we render into
+    // this scratch buffer and mix L+R down to the host's single channel at
+    // the end of processBlock. Allocated once in prepareToPlay so the audio
+    // thread only ever clamps the view, never reallocates.
+    juce::AudioBuffer<float> stereoScratch;
+
     // Custom wavetable file paths (kept in apvts state for persistence).
     juce::String customWavPath[3];
 
