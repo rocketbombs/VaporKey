@@ -56,9 +56,17 @@ it again.
   `FxChain` in the same block. No cross-thread access; no atomic needed.
 - **Custom wavetables** (`SynthParams::customTables[i]`) is a
   `std::shared_ptr<Wavetable>`. The message thread publishes a new table via
-  `std::atomic_store`; voices observe the swap with `std::atomic_load`. The
-  old table is freed when the last voice's local snapshot drops it - never
-  on the audio thread (the message thread holds the previous ref).
+  `std::atomic_exchange`; voices observe the swap with `std::atomic_load`.
+  The previous shared_ptr returned by the exchange is handed to a
+  `WavetableRetirementQueue` owned by the processor, which keeps a reference
+  until a periodic message-thread sweep finds `use_count() == 1` (the queue
+  is the sole holder, meaning every voice that snapshotted the old table
+  has finished its block) and drops it. This guarantees the heap
+  deallocation always runs on the message thread - relying on `shared_ptr`
+  refcount traffic alone could otherwise leave the audio thread as the last
+  holder when a voice's local snapshot in `renderNextBlock` destructs, and
+  the resulting `~Wavetable` (hundreds of KB of mip data) would deallocate
+  on the audio path.
 - **VisData** (peak / RMS / scope ring buffer) is single-writer (audio
   thread, end of `processBlock`), many-reader (UI timers). Plain `float`
   ring + `std::atomic<uint32_t>` write index with `release` ordering. UI
@@ -88,15 +96,28 @@ modulation correctness:
 ## Preset switching
 
 Preset apply (`loadFactoryPreset`, `loadUserPresetByName`,
-`setStateInformation`) and custom wavetable load happen on the **message
-thread**. They:
+`setStateInformation`) happens on the **message thread** through the
+`applyPresetUnderLock` helper:
 
 1. Take `getCallbackLock()` so `processBlock` cannot run.
 2. Call `engine.allNotesOff()` to flush voices, and `fx.reset()` to clear
    delay / reverb / chorus / EQ state. Without this the old envelope tails
    and FX feedback ride the new patch's gain and produce loud bursts.
-3. Apply the new APVTS state.
+3. Apply the new APVTS state (factory preset, user preset XML, or full
+   host state tree) inside the same locked scope.
 4. Release the lock; the next callback runs with the clean state.
+
+Holding the lock across **all** of steps 2 and 3 matters: releasing between
+them would let a callback run with voices muted and FX cleared but the old
+parameter values still wired up, briefly producing audible artefacts from
+the half-applied transition.
+
+Custom wavetable loads (`loadCustomWavetable`, `clearCustomWavetable`) are
+not part of this locked sequence - they do file I/O and we do not want to
+block the audio thread waiting on disk. They are RT-safe on their own:
+`std::atomic_exchange` publishes the new shared_ptr and the previous one is
+handed to the `WavetableRetirementQueue` so the audio thread is never the
+last holder.
 
 The lock is fine here because the audio thread is *the lock holder we're
 waiting for*, not the other way around: the message thread blocks until the

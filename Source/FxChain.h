@@ -16,7 +16,11 @@ public:
     void prepare (double sampleRate, int samplesPerBlock);
 
     // Process the buffer in place. `currentBpm` is consulted only when delay
-    // sync is on.
+    // sync is on. Mono input buffers route through an internal stereo scratch
+    // buffer and the result is mixed back down: running the stereo FX chain
+    // directly on a one-channel buffer with R aliased to L would double-apply
+    // per-channel processing (distortion, EQ) and scramble any cross-channel
+    // routing (ping-pong delay, M/S width).
     void process (juce::AudioBuffer<float>& buffer, double currentBpm);
 
     // Flush all effect tails. Used when loading a preset so the old delay /
@@ -24,6 +28,8 @@ public:
     void reset();
 
 private:
+    void processStereo (juce::AudioBuffer<float>& buffer, double currentBpm);
+
     SynthParams& params;
     double sr = 44100.0;
 
@@ -42,4 +48,9 @@ private:
     float prevEqMidG  = 1.0e9f;
     float prevEqMidF  = 1.0e9f;
     float prevEqHighG = 1.0e9f;
+
+    // Stereo scratch used when the host bus is mono. Sized once in prepare()
+    // to the host's max block size; the audio thread reads/writes it but
+    // never resizes.
+    juce::AudioBuffer<float> stereoScratch;
 };

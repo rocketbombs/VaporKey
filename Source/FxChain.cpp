@@ -56,6 +56,10 @@ void FxChain::prepare (double sampleRate, int samplesPerBlock)
 
     // Force EQ coefficients to be rebuilt on the first block at the new rate.
     prevEqLowG = prevEqMidG = prevEqMidF = prevEqHighG = 1.0e9f;
+
+    // Pre-size the mono-bus stereo scratch so the audio thread never grows it.
+    stereoScratch.setSize (2, samplesPerBlock, false, false, false);
+    stereoScratch.clear();
 }
 
 void FxChain::reset()
@@ -79,8 +83,40 @@ void FxChain::process (juce::AudioBuffer<float>& buffer, double currentBpm)
     const int numCh = buffer.getNumChannels();
     if (numCh < 1) return;
 
+    if (numCh == 1)
+    {
+        // Mono bus: broadcast the input into a stereo scratch buffer, run the
+        // stereo FX path on the scratch, then sum back to mono. This keeps
+        // the FX behaving as designed (independent L/R EQ and distortion,
+        // ping-pong delay, M/S width) and the final mono fold is a single
+        // average rather than the doubled / scrambled output you'd get if
+        // R aliased to L on the input buffer.
+        const int n = buffer.getNumSamples();
+        if (stereoScratch.getNumSamples() < n) return;
+
+        auto* src = buffer.getReadPointer (0);
+        auto* sL  = stereoScratch.getWritePointer (0);
+        auto* sR  = stereoScratch.getWritePointer (1);
+        juce::FloatVectorOperations::copy (sL, src, n);
+        juce::FloatVectorOperations::copy (sR, src, n);
+
+        float* views[2] = { sL, sR };
+        juce::AudioBuffer<float> stereoView (views, 2, n);
+        processStereo (stereoView, currentBpm);
+
+        auto* dst = buffer.getWritePointer (0);
+        for (int i = 0; i < n; ++i)
+            dst[i] = 0.5f * (sL[i] + sR[i]);
+        return;
+    }
+
+    processStereo (buffer, currentBpm);
+}
+
+void FxChain::processStereo (juce::AudioBuffer<float>& buffer, double currentBpm)
+{
     auto* L = buffer.getWritePointer (0);
-    auto* R = numCh > 1 ? buffer.getWritePointer (1) : L;
+    auto* R = buffer.getWritePointer (1);
     const int n = buffer.getNumSamples();
 
     // Distortion
