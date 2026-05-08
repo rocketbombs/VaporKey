@@ -7,6 +7,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Pluginval download URL pattern. Pinned by the user (bump as new pluginval
+# releases come out). 'latest' tracks the most recent stable release.
+env:
+  PLUGINVAL_VERSION: latest
+  PLUGINVAL_STRICTNESS: "5"
+
 jobs:
   windows:
     name: Build (Windows VST3)
@@ -30,6 +36,16 @@ jobs:
           if (-not $vst3) { throw "VST3 not found" }
           echo "Found: $($vst3.FullName)"
           echo "VST3_PATH=$($vst3.FullName)" >> $env:GITHUB_ENV
+
+      - name: Validate with pluginval
+        shell: pwsh
+        run: |
+          $url = "https://github.com/Tracktion/pluginval/releases/${env:PLUGINVAL_VERSION}/download/pluginval_Windows.zip"
+          Invoke-WebRequest -Uri $url -OutFile pluginval.zip
+          Expand-Archive pluginval.zip -DestinationPath pluginval-bin -Force
+          $exe = Get-ChildItem -Recurse -Path pluginval-bin -Filter "pluginval.exe" | Select-Object -First 1
+          if (-not $exe) { throw "pluginval.exe not found in archive" }
+          & $exe.FullName --strictness-level $env:PLUGINVAL_STRICTNESS --validate-in-process --validate $env:VST3_PATH
 
       - name: Upload VST3
         uses: actions/upload-artifact@v4
@@ -56,6 +72,17 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
+      - name: Validate with pluginval
+        run: |
+          set -euo pipefail
+          curl -fsSL -o pluginval.zip \
+            "https://github.com/Tracktion/pluginval/releases/${PLUGINVAL_VERSION}/download/pluginval_macOS.zip"
+          unzip -q pluginval.zip
+          ./pluginval.app/Contents/MacOS/pluginval \
+            --strictness-level "${PLUGINVAL_STRICTNESS}" \
+            --validate-in-process \
+            --validate "build/VaporKey_artefacts/Release/VST3/VaporKey.vst3"
+
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
@@ -81,13 +108,28 @@ jobs:
           sudo apt-get install -y libasound2-dev libjack-jackd2-dev \
             libcurl4-openssl-dev libfreetype6-dev libx11-dev libxcomposite-dev \
             libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev \
-            libwebkit2gtk-4.1-dev libglu1-mesa-dev mesa-common-dev libgtk-3-dev
+            libwebkit2gtk-4.1-dev libglu1-mesa-dev mesa-common-dev libgtk-3-dev \
+            xvfb
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --parallel
+
+      - name: Validate with pluginval
+        # Linux runners have no display; pluginval instantiates the editor, so
+        # we wrap it in xvfb-run.
+        run: |
+          set -euo pipefail
+          curl -fsSL -o pluginval.zip \
+            "https://github.com/Tracktion/pluginval/releases/${PLUGINVAL_VERSION}/download/pluginval_Linux.zip"
+          unzip -q pluginval.zip
+          chmod +x ./pluginval
+          xvfb-run -a ./pluginval \
+            --strictness-level "${PLUGINVAL_STRICTNESS}" \
+            --validate-in-process \
+            --validate "build/VaporKey_artefacts/Release/VST3/VaporKey.vst3"
 
       - name: Upload VST3
         uses: actions/upload-artifact@v4
