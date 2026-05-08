@@ -27,8 +27,10 @@ public:
 
     int getCurrentNote() const noexcept { return currentNote; }
 
-    // Smoothly retrigger / glide to new note (used in mono/legato mode without restarting envelopes).
-    void retargetNote (int midiNote, float velocity, bool retriggerEnvelopes);
+    // Asks the next startNote to leave amp / mod / pitch envelopes alone, so a
+    // mono-legato transition glides into the new note without re-attacking.
+    // The flag is consumed (cleared) inside startNote.
+    void setLegatoSkipEnvRetrigger (bool b) noexcept { legatoSkipEnvRetrigger = b; }
 
 private:
     struct OscState
@@ -43,9 +45,13 @@ private:
     OscState osc[3];
     float subPhase = 0.0f;
 
-    // Pink/brown noise state
-    float pinkB[7] {};
-    float brownState = 0.0f;
+    // Pink/brown noise state - one chain per output channel so left and
+    // right are decorrelated without resorting to mixing in unfiltered
+    // (aliasing-prone) white noise on one side.
+    float pinkBL[7] {};
+    float pinkBR[7] {};
+    float brownStateL = 0.0f;
+    float brownStateR = 0.0f;
 
     // Envelopes
     juce::ADSR ampEnv;
@@ -68,7 +74,7 @@ private:
     float baseFreqCurrent = 440.0f;
     float glideCoef = 1.0f; // per-sample
     float velocityNorm = 1.0f;
-    bool  noteHeld = false;
+    bool  legatoSkipEnvRetrigger = false;
 
     juce::Random rng;
 

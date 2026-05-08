@@ -240,6 +240,7 @@ private:
     void updateMacroSums();
     void filterMidi (juce::MidiBuffer& midi);
     void processArpeggiator (juce::MidiBuffer& midi, int numSamples);
+    void markVoicesLegato();
 
     // Silence active voices and clear FX state. Used when loading a preset so
     // the old voices/FX tails don't ride the new parameter values and produce
@@ -270,7 +271,6 @@ private:
     juce::Array<ArpHeldNote> arpHeld;     // notes physically held by user
     juce::Array<ArpHeldNote> arpLatched;  // latch buffer (active only when latch is on)
     bool   arpWasOn         = false;       // detect param transitions
-    bool   arpUpDir         = true;        // direction state for Up/Down + Down/Up
     int    arpStepIdx       = 0;           // monotonic step counter (cycles pattern)
     int    arpOctOffset     = 0;           // current octave offset (multiples of 12)
     double arpSamplesToStep = 0.0;         // samples until next step boundary
@@ -278,6 +278,24 @@ private:
     int    arpCurrentNote   = -1;          // currently sounding arp note (-1 = none)
     int    arpCurrentChan   = 1;           // channel of currently sounding note
     juce::Random arpRng;
+
+    // Pre-allocated scratch buffers for processArpeggiator / filterMidi so the
+    // audio thread never hits malloc. capacity is reserved once in
+    // prepareToPlay; clearQuick / MidiBuffer::clear keep it.
+    juce::MidiBuffer                  arpPassBuf;
+    juce::Array<juce::MidiMessage>    arpNoteEventsBuf;
+    juce::Array<int>                  arpNoteSamplesBuf;
+    juce::Array<ArpHeldNote>          arpActiveBuf;
+    juce::Array<ArpHeldNote>          arpOrderedBuf;
+    juce::MidiBuffer                  monoFilterBuf;
+
+    // Cached EQ coefficient inputs so we only rebuild the IIR coefficients
+    // when something actually changes (the JUCE make* helpers allocate a
+    // ReferenceCountedObject every call - lethal on the audio thread).
+    float  prevEqLowG  = 1.0e9f;  // sentinel: forces first build
+    float  prevEqMidG  = 1.0e9f;
+    float  prevEqMidF  = 1.0e9f;
+    float  prevEqHighG = 1.0e9f;
 
     // Custom wavetable file paths (kept in apvts state for persistence).
     juce::String customWavPath[3];

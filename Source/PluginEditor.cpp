@@ -319,8 +319,9 @@ juce::Point<float> EqCurve::nodePos (Node n) const
         case NodeLow:  return { xForFreq (kEqLowFc,        r), yForDb (currentLowG(),  r) };
         case NodeMid:  return { xForFreq (currentMidF(),   r), yForDb (currentMidG(),  r) };
         case NodeHigh: return { xForFreq (kEqHighFc,       r), yForDb (currentHighG(), r) };
-        default:       return {};
+        case NodeNone: break;
     }
+    return {};
 }
 
 EqCurve::Node EqCurve::hitTest (juce::Point<float> p) const
@@ -698,8 +699,8 @@ void WavetableDisplay::chooseWavFile()
         juce::File::getSpecialLocation (juce::File::userMusicDirectory),
         "*.wav");
 
-    auto flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
-    chooser->launchAsync (flags, [this] (const juce::FileChooser& fc)
+    const int chooserFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+    chooser->launchAsync (chooserFlags, [this] (const juce::FileChooser& fc)
     {
         const auto file = fc.getResult();
         if (file == juce::File()) return;
@@ -1612,8 +1613,8 @@ void MasterPage::onRename()
         const int idx = findEntryIndex (newName, false);
         if (idx >= 0)
         {
-            const int row = visibleRowFromEntryIndex (idx);
-            if (row >= 0) presetList.selectRow (row);
+            const int newRow = visibleRowFromEntryIndex (idx);
+            if (newRow >= 0) presetList.selectRow (newRow);
         }
         refreshNowPlaying();
         showStatus ("RENAMED", Colors::neonGreen);
@@ -1748,7 +1749,7 @@ MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
     tagline.setJustificationType (juce::Justification::topLeft);
     addAndMakeVisible (tagline);
 
-    copy.setText ("v0.4   /   3 wavetable osc + sub + noise   /   16-voice poly\n"
+    copy.setText ("v" + juce::String (JucePlugin_VersionString) + "   /   3 wavetable osc + sub + noise   /   16-voice poly\n"
                   "ADSR amp/mod, pitch env, 2 LFOs, 4 macros\n"
                   "Distortion, Chorus, Phaser, EQ, Delay, Reverb, Comp\n"
                   "Grit / Vibe / Drift / Sat   -   user presets supported\n"
@@ -1981,7 +1982,8 @@ void VaporKeyAudioProcessorEditor::paint (juce::Graphics& g)
 
     g.setColour (Colors::textDim);
     g.setFont (Fonts::small());
-    g.drawText ("WAVETABLE  /  SYNTHESIZER  /  v0.4", 28, 56, 360, 14, juce::Justification::left);
+    g.drawText ("WAVETABLE  /  SYNTHESIZER  /  v" + juce::String (JucePlugin_VersionString),
+                28, 56, 360, 14, juce::Justification::left);
 
     // Top-right neon lines + "OUTPUT" tag above the meter
     g.setColour (Colors::neonPink.withAlpha (0.6f));
