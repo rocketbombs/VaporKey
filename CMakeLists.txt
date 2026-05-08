@@ -59,6 +59,16 @@ target_sources(VaporKey PRIVATE
     Source/Wavetable.cpp
     Source/LookAndFeel.cpp
     Source/Presets.cpp
+    Source/Widgets/VaporWidgets.cpp
+    Source/Widgets/Meters.cpp
+    Source/Widgets/EqCurve.cpp
+    Source/Widgets/WavetableDisplay.cpp
+    Source/Pages/OscPage.cpp
+    Source/Pages/FilterEnvPage.cpp
+    Source/Pages/ModPage.cpp
+    Source/Pages/ArpPage.cpp
+    Source/Pages/FxPage.cpp
+    Source/Pages/MasterPage.cpp
 )
 
 target_compile_definitions(VaporKey PRIVATE
