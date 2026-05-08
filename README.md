@@ -19,7 +19,9 @@ FX chain — wrapped in a single audio-reactive editor.
 - **57 factory presets** across Bass, Lead, Pad, Pluck, Keys, Bell, FX, Arp
 - **Realtime-safe** audio path — no allocations, locks, or I/O in `processBlock`
   (see [docs/RealtimeSafety.md](docs/RealtimeSafety.md))
-- **Validated** on every push with [Tracktion pluginval](https://github.com/Tracktion/pluginval)
+- **Validated** on every push by a three-stage CI gate: a JSON preset linter
+  (`VaporKeyPresetLint`), a unit + audio-regression test suite
+  (`VaporKeyTests`), and [Tracktion pluginval](https://github.com/Tracktion/pluginval)
   at strictness 5
 
 ## Synth engine
@@ -149,15 +151,45 @@ Source/
   PresetStore.{h,cpp}        factory + user preset save/load/rename
   Presets.{h,cpp}            JSON parser for embedded factory presets
   Presets.json               factory preset data (embedded at build)
+  PresetLint.cpp             standalone JSON ↔ parameter-registry linter
   LookAndFeel.{h,cpp}        custom JUCE LookAndFeel
   Pages/                     one source pair per editor page
     OscPage, FilterEnvPage, ModPage, ArpPage, FxPage, MasterPage
   Widgets/                   reusable UI: VaporWidgets, Meters, EqCurve, WavetableDisplay
+  Tests/                     unit + audio-regression suite (VaporKeyTests target)
+    TestRunner.{h,cpp}       tiny self-registering framework, single binary
+    TestSupport.{h,cpp}      headless TestProcessor, audio fixtures, .wav helpers
+    ParametersTests.cpp      registry / cache / defaults / range validation
+    WavetableTests.cpp       factory shapes, mip selection, build-from-audio
+    WavetableImportTests.cpp .wav import + retirement queue
+    SynthEngineTests.cpp     mono/legato, pitch bend, mod wheel, aftertouch, voice stealing
+    ArpeggiatorTests.cpp     all six modes, swing, latch, divisions, controller pass-through
+    FxChainTests.cpp         distortion, EQ, delay, reverb, compressor, mono bus
+    PresetTests.cpp          factory apply, state save/restore round-trip
+    AudioRegressionTests.cpp end-to-end render under stress, CPU budget, click-free preset switch
 docs/
   RealtimeSafety.md          rules for anything that runs on the audio thread
 CMakeLists.txt
-.github/workflows/build.yml  Win/mac/Linux build + pluginval validation + tag release
+.github/workflows/build.yml  preset-lint -> tests -> Win/mac/Linux build + pluginval + tag release
 ```
+
+## Testing
+
+Both validation targets are part of the default CMake configuration:
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target VaporKeyPresetLint VaporKeyTests --parallel
+
+build/VaporKeyPresetLint_artefacts/Release/VaporKeyPresetLint Source/Presets.json
+build/VaporKeyTests_artefacts/Release/VaporKeyTests
+# or run a subset:
+build/VaporKeyTests_artefacts/Release/VaporKeyTests Wavetable
+build/VaporKeyTests_artefacts/Release/VaporKeyTests --list
+```
+
+CI runs both on every push (Linux, headless via `xvfb-run`) before the
+per-platform pluginval pass. Any failing test fails the build.
 
 ## Contributing
 
