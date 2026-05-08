@@ -54,6 +54,7 @@ target_sources(VaporKey PRIVATE
     Source/FxChain.cpp
     Source/SynthVoice.cpp
     Source/Wavetable.cpp
+    Source/WavetableImport.cpp
     Source/LookAndFeel.cpp
     Source/Presets.cpp
 )
