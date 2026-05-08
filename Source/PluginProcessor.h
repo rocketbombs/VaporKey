@@ -3,6 +3,7 @@
 #include "Parameters.h"
 #include "Arpeggiator.h"
 #include "FxChain.h"
+#include "SynthEngine.h"
 
 class VaporKeyAudioProcessor : public juce::AudioProcessor
 {
@@ -62,14 +63,13 @@ public:
 private:
     void updateMacroSums();
     void filterMidi (juce::MidiBuffer& midi);
-    void markVoicesLegato();
 
     // Silence active voices and clear FX state. Used when loading a preset so
     // the old voices/FX tails don't ride the new parameter values and produce
     // a loud burst (filter cracks, delay/reverb feedback into the new gain).
     void silenceForPresetSwitch();
 
-    juce::Synthesiser synth;
+    SynthEngine engine { synthParams };
     FxChain fx;
 
     double sr = 44100.0;

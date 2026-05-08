@@ -1,6 +1,5 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-#include "Voice.h"
 #include "PresetStore.h"
 #include "WavetableImport.h"
 #include <algorithm>
@@ -17,21 +16,12 @@ VaporKeyAudioProcessor::VaporKeyAudioProcessor()
     // constructor; nothing extra needs to happen here. Without per-instance
     // seeding, multiple plugin instances would produce identical random
     // streams that sum coherently and sound buzzy/aliased.
-
-    synth.addSound (new WTSound());
-    for (int i = 0; i < 16; ++i)
-        synth.addVoice (new WTVoice (synthParams));
-    synth.setNoteStealingEnabled (true);
 }
 
 void VaporKeyAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     sr = sampleRate;
-    synth.setCurrentPlaybackSampleRate (sampleRate);
-    for (int i = 0; i < synth.getNumVoices(); ++i)
-        if (auto* v = dynamic_cast<WTVoice*> (synth.getVoice (i)))
-            v->prepare (sampleRate);
-
+    engine.prepare (sampleRate);
     fx.prepare (sampleRate, samplesPerBlock);
 
     // Reserve generous capacity once so the audio thread never reallocates
@@ -123,7 +113,7 @@ void VaporKeyAudioProcessor::filterMidi (juce::MidiBuffer& midi)
             // voice stealing on the synth, this glides the existing voice into
             // the new pitch instead of re-attacking.
             if (legato && ! monoHeldNotes.isEmpty())
-                markVoicesLegato();
+                engine.markVoicesLegato();
 
             monoHeldNotes.removeAllInstancesOf (msg.getNoteNumber());
             monoHeldNotes.add (msg.getNoteNumber());
@@ -137,7 +127,7 @@ void VaporKeyAudioProcessor::filterMidi (juce::MidiBuffer& midi)
             if (! monoHeldNotes.isEmpty())
             {
                 const int n = monoHeldNotes.getLast();
-                if (legato) markVoicesLegato();
+                if (legato) engine.markVoicesLegato();
                 out.addEvent (msg, sample); // emit the off
                 out.addEvent (juce::MidiMessage::noteOn (msg.getChannel(), n, (juce::uint8) 100), sample);
                 continue;
@@ -147,19 +137,6 @@ void VaporKeyAudioProcessor::filterMidi (juce::MidiBuffer& midi)
         out.addEvent (msg, sample);
     }
     midi.swapWith (out);
-}
-
-// Flag currently-playing voices as "next startNote is a legato transition -
-// keep envelopes running". The synth steals one of the active voices for the
-// new note; that voice consumes the flag inside startNote. We deliberately
-// skip idle voices so the flag can't leak across a mono->poly switch (idle
-// voices that get retriggered later would otherwise skip their attack).
-void VaporKeyAudioProcessor::markVoicesLegato()
-{
-    for (int i = 0; i < synth.getNumVoices(); ++i)
-        if (auto* v = dynamic_cast<WTVoice*> (synth.getVoice (i)))
-            if (v->isVoiceActive())
-                v->setLegatoSkipEnvRetrigger (true);
 }
 
 void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -188,7 +165,7 @@ void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     updateMacroSums();
 
     buffer.clear();
-    synth.renderNextBlock (buffer, midi, 0, buffer.getNumSamples());
+    engine.renderBlock (buffer, midi);
 
     const int numCh = buffer.getNumChannels();
     if (numCh < 1) return;
@@ -296,7 +273,7 @@ void VaporKeyAudioProcessor::silenceForPresetSwitch()
     // produce a loud burst (filter cracks, feedback into a louder gain).
     const juce::ScopedLock sl (getCallbackLock());
 
-    synth.allNotesOff (0, false);
+    engine.allNotesOff();
     fx.reset();
 }
 
