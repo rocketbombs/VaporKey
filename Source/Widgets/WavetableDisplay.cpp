@@ -121,6 +121,7 @@ void WavetableDisplay::paint (juce::Graphics& g)
     const Wavetable* wtPtr = nullptr;
     if (shape == WavetableLibrary::Custom)
     {
+        // TODO(C++20): see Parameters.h customTables comment.
         customSnap = std::atomic_load (&processor.synthParams.customTables[idx]);
         wtPtr = customSnap ? customSnap.get()
                            : &WavetableLibrary::get().getTable (WavetableLibrary::Basic);

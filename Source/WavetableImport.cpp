@@ -41,6 +41,7 @@ bool WavetableImport::loadInto (std::shared_ptr<Wavetable>& target,
     auto newTable = std::make_shared<Wavetable>();
     newTable->buildFromMonoAudio (mono.data(), total);
 
+    // TODO(C++20): see Parameters.h customTables comment.
     std::atomic_store (&target, newTable);
     pathOut = file.getFullPathName();
     return true;
@@ -49,6 +50,7 @@ bool WavetableImport::loadInto (std::shared_ptr<Wavetable>& target,
 void WavetableImport::clear (std::shared_ptr<Wavetable>& target, juce::String& pathOut)
 {
     std::shared_ptr<Wavetable> empty;
+    // TODO(C++20): see Parameters.h customTables comment.
     std::atomic_store (&target, empty);
     pathOut.clear();
 }

@@ -20,18 +20,30 @@ bool PresetStore::applyFactoryPreset (juce::AudioProcessorValueTreeState& apvts,
     const auto& list = VKPresets::all();
     if (index < 0 || index >= (int) list.size()) return false;
 
-    // Reset to defaults first by re-creating defaults from parameter ranges.
-    for (auto* param : proc.getParameters())
-        if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (param))
-            p->setValueNotifyingHost (p->getDefaultValue());
-
+    // Build an id -> normalized override map from the preset, then walk every
+    // parameter exactly once - falling back to the parameter's default when
+    // an id isn't in the preset. The previous "reset all to default, then
+    // apply overrides" sequence sent two setValueNotifyingHost calls per
+    // overridden parameter, which hosts with active automation lanes saw as
+    // a flicker of events on every preset switch and bloated undo history.
+    juce::HashMap<juce::String, float> overrides;
     for (const auto& kv : list[(size_t) index].values)
     {
         if (auto* p = apvts.getParameter (kv.id))
         {
             const auto& range = p->getNormalisableRange();
-            const float norm = range.convertTo0to1 (kv.v);
-            p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, norm));
+            overrides.set (kv.id,
+                           juce::jlimit (0.0f, 1.0f, range.convertTo0to1 (kv.v)));
+        }
+    }
+
+    for (auto* param : proc.getParameters())
+    {
+        if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (param))
+        {
+            const float norm = overrides.contains (p->paramID) ? overrides[p->paramID]
+                                                               : p->getDefaultValue();
+            p->setValueNotifyingHost (norm);
         }
     }
     return true;
