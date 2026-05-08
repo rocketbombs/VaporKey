@@ -743,9 +743,6 @@ void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 {
     juce::ScopedNoDenormals nodn;
 
-    // Update macros and tempo info
-    updateMacroSums();
-
     if (auto* ph = getPlayHead())
     {
         if (auto info = ph->getPosition())
@@ -760,6 +757,12 @@ void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     processArpeggiator (midi, buffer.getNumSamples());
 
     filterMidi (midi);
+
+    // Compute the per-block modulation sums *after* filterMidi has scanned the
+    // buffer for CC1 / channel pressure - otherwise mod-wheel / aftertouch
+    // destinations are one audio callback stale and a note-on in this same
+    // buffer would start with the previous block's modulation values.
+    updateMacroSums();
 
     buffer.clear();
     synth.renderNextBlock (buffer, midi, 0, buffer.getNumSamples());
