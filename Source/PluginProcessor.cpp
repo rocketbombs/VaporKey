@@ -171,6 +171,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout VaporKeyAudioProcessor::crea
                                             "Macro " + juce::String (m + 1) + " Amt", juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f));
     }
 
+    // MIDI mod sources: the value is whatever the controller is sending; the
+    // user picks a destination and an amount.
+    v.push_back (std::make_unique<PC> (juce::ParameterID { "mw_dest", 1 }, "Mod Wheel Dest", destNames, 0));
+    v.push_back (std::make_unique<P>  (juce::ParameterID { "mw_amt",  1 }, "Mod Wheel Amt",  juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f));
+    v.push_back (std::make_unique<PC> (juce::ParameterID { "at_dest", 1 }, "Aftertouch Dest", destNames, 0));
+    v.push_back (std::make_unique<P>  (juce::ParameterID { "at_amt",  1 }, "Aftertouch Amt",  juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f));
+
     return { v.begin(), v.end() };
 }
 
@@ -275,6 +282,9 @@ void VaporKeyAudioProcessor::cacheParams()
         synthParams.macroAmt[m]  = getF (prefix + "amt");
     }
 
+    synthParams.mwDest = getF ("mw_dest"); synthParams.mwAmt = getF ("mw_amt");
+    synthParams.atDest = getF ("at_dest"); synthParams.atAmt = getF ("at_amt");
+
     synthParams.arpOn      = getF ("arp_on");
     synthParams.arpMode    = getF ("arp_mode");
     synthParams.arpDiv     = getF ("arp_div");
@@ -317,6 +327,8 @@ void VaporKeyAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     arpNoteSamplesBuf.ensureStorageAllocated (256);
     arpActiveBuf.ensureStorageAllocated (32);
     arpOrderedBuf.ensureStorageAllocated (32);
+    arpHeld.ensureStorageAllocated (32);
+    arpLatched.ensureStorageAllocated (32);
     monoHeldNotes.ensureStorageAllocated (64);
 
     // Force EQ coefficients to be rebuilt on the first block at the new rate.
@@ -340,6 +352,15 @@ void VaporKeyAudioProcessor::updateMacroSums()
         const float amt = synthParams.macroAmt[m]->load();   // -1..1
         synthParams.modSum[dest] += val * amt;
     }
+
+    auto applyMidiSource = [this] (std::atomic<float>* destP, std::atomic<float>* amtP, float val01)
+    {
+        const int dest = (int) (destP->load() + 0.5f);
+        if (dest <= ModDest::None || dest >= ModDest::NumDests) return;
+        synthParams.modSum[dest] += val01 * amtP->load();
+    };
+    applyMidiSource (synthParams.mwDest, synthParams.mwAmt, synthParams.modWheel.load());
+    applyMidiSource (synthParams.atDest, synthParams.atAmt, synthParams.aftertouch.load());
 }
 
 void VaporKeyAudioProcessor::processArpeggiator (juce::MidiBuffer& midi, int numSamples)
@@ -677,14 +698,17 @@ void VaporKeyAudioProcessor::filterMidi (juce::MidiBuffer& midi)
     midi.swapWith (out);
 }
 
-// Flag every voice as "next startNote is a legato transition - keep envelopes
-// running". The synth picks one voice to steal for the new note; only that
-// voice consumes the flag, the rest leave it cleared on their next startNote.
+// Flag currently-playing voices as "next startNote is a legato transition -
+// keep envelopes running". The synth steals one of the active voices for the
+// new note; that voice consumes the flag inside startNote. We deliberately
+// skip idle voices so the flag can't leak across a mono->poly switch (idle
+// voices that get retriggered later would otherwise skip their attack).
 void VaporKeyAudioProcessor::markVoicesLegato()
 {
     for (int i = 0; i < synth.getNumVoices(); ++i)
         if (auto* v = dynamic_cast<WTVoice*> (synth.getVoice (i)))
-            v->setLegatoSkipEnvRetrigger (true);
+            if (v->isVoiceActive())
+                v->setLegatoSkipEnvRetrigger (true);
 }
 
 static inline float distort (float x, int type, float drive)

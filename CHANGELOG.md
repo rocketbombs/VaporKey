@@ -6,6 +6,18 @@ versions may break parameter or preset compatibility.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-08
+
+### Added
+- Mod wheel and channel aftertouch are now real modulation sources. Each
+  has a destination + amount on the Mod page (next to the four macros)
+  and feeds the same per-block mod-sum the macros do, so any existing
+  destination (cutoff, position, FX mix, …) reacts to live MIDI.
+- CI: every build is now validated with Tracktion's pluginval at
+  strictness 5 (Linux uses xvfb-run for the headless editor pass).
+- CI: tag pushes (`vX.Y.Z`) draft a GitHub Release with per-platform
+  bundle zips, ready for the maintainer to review and publish.
+
 ### Fixed
 - Multi-instance host freezes (FL Studio and others) caused by audio-thread
   heap allocations:
@@ -15,6 +27,13 @@ versions may break parameter or preset compatibility.
     the IIR coefficients on change — the JUCE `Coefficients::make*` helpers
     each allocate a `ReferenceCountedObject`, which is fatal on the audio
     thread under multi-instance contention.
+  - `arpHeld` and `arpLatched` are now pre-reserved in `prepareToPlay`,
+    closing the last `juce::Array::add` path that could allocate on the
+    audio thread under fat chords.
+- Mono+Legato no longer "skips the attack" on the first poly note after
+  switching back to poly. `markVoicesLegato` only flags voices that are
+  currently active, so the skip-retrigger flag can't be left stale on
+  the 15 idle voices.
 - Noise generation that summed coherently into aliasing-like buzz:
   - Each `WTVoice` now seeds its `juce::Random` randomly at construction,
     so 16 voices in a chord no longer share an identical noise stream.

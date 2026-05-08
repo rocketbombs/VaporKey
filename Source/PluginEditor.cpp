@@ -1142,7 +1142,23 @@ ModPage::ModPage (VaporKeyAudioProcessor& p)
         addAndMakeVisible (*macros[m].dest);
         addAndMakeVisible (*macros[m].amt);
     }
+
+    mwUI.dest = std::make_unique<VaporCombo> (p.apvts, "mw_dest", "Dest", destNames);
+    mwUI.amt  = std::make_unique<VaporKnob>  (p.apvts, "mw_amt",  "Amt");
+    addAndMakeVisible (*mwUI.dest);
+    addAndMakeVisible (*mwUI.amt);
+
+    atUI.dest = std::make_unique<VaporCombo> (p.apvts, "at_dest", "Dest", destNames);
+    atUI.amt  = std::make_unique<VaporKnob>  (p.apvts, "at_amt",  "Amt");
+    addAndMakeVisible (*atUI.dest);
+    addAndMakeVisible (*atUI.amt);
 }
+
+// Bottom row holds six modulation slots: four knob-driven macros plus the
+// MIDI-driven mod wheel and aftertouch sources. Each slot has a destination
+// combo at the top; macros also get a Value knob, MIDI sources only an Amt
+// knob (their value comes from the controller).
+namespace { constexpr int kNumModSlots = SynthParams::kNumMacros + 2; }
 
 void ModPage::paint (juce::Graphics& g)
 {
@@ -1157,11 +1173,16 @@ void ModPage::paint (juce::Graphics& g)
     drawSectionBg (g, s1, Colors::neonCyan, "LFO 1   >  CUTOFF");
     drawSectionBg (g, s2, Colors::neonPink, "LFO 2   >  WT POSITION");
 
-    const int mw = bot.getWidth() / 4;
-    for (int i = 0; i < 4; ++i)
+    const int mw = bot.getWidth() / kNumModSlots;
+    for (int i = 0; i < kNumModSlots; ++i)
     {
         juce::Rectangle<int> mr (bot.getX() + i * mw + (i > 0 ? 5 : 0), bot.getY(), mw - 5, bot.getHeight());
-        drawSectionBg (g, mr, Colors::neonAmber, "MACRO " + juce::String (i + 1));
+        juce::String title;
+        juce::Colour col;
+        if (i < SynthParams::kNumMacros) { title = "MACRO " + juce::String (i + 1); col = Colors::neonAmber; }
+        else if (i == SynthParams::kNumMacros) { title = "MOD WHEEL"; col = Colors::neonGreen; }
+        else                                   { title = "AFTERTOUCH"; col = Colors::neonGreen; }
+        drawSectionBg (g, mr, col, title);
     }
 }
 
@@ -1189,13 +1210,22 @@ void ModPage::resized()
     layoutLfo (s1, l1Shape.get(), l1Rate.get(), l1Amt.get(), l1Sync.get(), l1Div.get());
     layoutLfo (s2, l2Shape.get(), l2Rate.get(), l2Amt.get(), l2Sync.get(), l2Div.get());
 
-    const int mw = bot.getWidth() / 4;
-    for (int i = 0; i < 4; ++i)
+    const int mw = bot.getWidth() / kNumModSlots;
+    for (int i = 0; i < kNumModSlots; ++i)
     {
         juce::Rectangle<int> mr (bot.getX() + i * mw + (i > 0 ? 5 : 0), bot.getY(), mw - 5, bot.getHeight());
         mr.removeFromTop (kSectionTitleH); mr.reduce (10, 8);
-        macros[i].dest->setBounds (mr.removeFromTop (50));
-        layoutKnobRow (mr, { macros[i].val.get(), macros[i].amt.get() }, 0);
+        if (i < SynthParams::kNumMacros)
+        {
+            macros[i].dest->setBounds (mr.removeFromTop (50));
+            layoutKnobRow (mr, { macros[i].val.get(), macros[i].amt.get() }, 0);
+        }
+        else
+        {
+            auto& ui = (i == SynthParams::kNumMacros) ? mwUI : atUI;
+            ui.dest->setBounds (mr.removeFromTop (50));
+            layoutKnobRow (mr, { ui.amt.get() }, 0);
+        }
     }
 }
 

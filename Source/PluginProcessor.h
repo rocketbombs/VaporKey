@@ -137,6 +137,11 @@ struct SynthParams
     std::atomic<float>* macroDest[kNumMacros] {};
     std::atomic<float>* macroAmt[kNumMacros] {};
 
+    // MIDI-driven modulation sources (the "value" comes from incoming MIDI).
+    // Each carries a destination + amount, just like a macro.
+    std::atomic<float>* mwDest{}; std::atomic<float>* mwAmt{};
+    std::atomic<float>* atDest{}; std::atomic<float>* atAmt{};
+
     // Arpeggiator
     std::atomic<float>* arpOn{};
     std::atomic<float>* arpMode{};
