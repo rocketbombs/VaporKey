@@ -186,7 +186,12 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --parallel
+        # VaporKey_All builds both VST3 and Standalone (the artefacts this job
+        # uploads). Targeting it explicitly avoids re-compiling VaporKeyTests
+        # and VaporKeyPresetLint here - those targets each pull in their own
+        # copy of JUCE (incl. harfbuzz), and four independent JUCE compiles
+        # running in parallel will OOM-kill a default 7 GB Linux runner.
+        run: cmake --build build --target VaporKey_All --parallel
 
       - name: Validate with pluginval
         # Linux runners have no display; pluginval instantiates the editor, so
