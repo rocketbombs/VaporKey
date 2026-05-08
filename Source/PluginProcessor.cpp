@@ -12,11 +12,10 @@ VaporKeyAudioProcessor::VaporKeyAudioProcessor()
     Parameters::cache (apvts, synthParams);
     WavetableLibrary::get();
 
-    // Decorrelate per-instance RNGs. Without this every plugin instance starts
-    // its arpeggiator (and below: each voice's noise/grit generator) with the
-    // same JUCE default seed, so multiple instances produce identical random
-    // streams - which sums coherently and sounds buzzy/aliased.
-    arpRng.setSeedRandomly();
+    // Each WTVoice and the Arpeggiator seed their RNGs randomly in their own
+    // constructor; nothing extra needs to happen here. Without per-instance
+    // seeding, multiple plugin instances would produce identical random
+    // streams that sum coherently and sound buzzy/aliased.
 
     synth.addSound (new WTSound());
     for (int i = 0; i < 16; ++i)
@@ -51,14 +50,8 @@ void VaporKeyAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
 
     // Reserve generous capacity once so the audio thread never reallocates
     // these scratch buffers (the source of multi-instance host freezes).
-    arpPassBuf.ensureSize (8192);
+    arp.prepare (sampleRate);
     monoFilterBuf.ensureSize (8192);
-    arpNoteEventsBuf.ensureStorageAllocated (256);
-    arpNoteSamplesBuf.ensureStorageAllocated (256);
-    arpActiveBuf.ensureStorageAllocated (32);
-    arpOrderedBuf.ensureStorageAllocated (32);
-    arpHeld.ensureStorageAllocated (32);
-    arpLatched.ensureStorageAllocated (32);
     monoHeldNotes.ensureStorageAllocated (64);
 
     // Force EQ coefficients to be rebuilt on the first block at the new rate.
@@ -91,261 +84,6 @@ void VaporKeyAudioProcessor::updateMacroSums()
     };
     applyMidiSource (synthParams.mwDest, synthParams.mwAmt, synthParams.modWheel.load());
     applyMidiSource (synthParams.atDest, synthParams.atAmt, synthParams.aftertouch.load());
-}
-
-void VaporKeyAudioProcessor::processArpeggiator (juce::MidiBuffer& midi, int numSamples)
-{
-    const bool on    = *synthParams.arpOn > 0.5f;
-    const bool latch = *synthParams.arpLatch > 0.5f;
-
-    // Reuse pre-allocated scratch buffers so we never call malloc on the audio
-    // thread (multi-instance setups serialize on the heap lock and freeze).
-    auto& pass        = arpPassBuf;
-    auto& noteEvents  = arpNoteEventsBuf;
-    auto& noteSamples = arpNoteSamplesBuf;
-    pass.clear();
-    noteEvents.clearQuick();
-    noteSamples.clearQuick();
-
-    for (const auto meta : midi)
-    {
-        const auto msg = meta.getMessage();
-        if (msg.isNoteOnOrOff())
-        {
-            noteEvents.add (msg);
-            noteSamples.add (meta.samplePosition);
-        }
-        else
-        {
-            pass.addEvent (msg, meta.samplePosition);
-        }
-    }
-
-    // Transition into/out of arp mode: clear pending state cleanly.
-    if (on != arpWasOn)
-    {
-        if (arpCurrentNote >= 0)
-            pass.addEvent (juce::MidiMessage::noteOff (arpCurrentChan, arpCurrentNote), 0);
-        arpCurrentNote = -1;
-        arpSamplesToOff = -1;
-        arpSamplesToStep = 0.0;
-        arpStepIdx = 0;
-        arpOctOffset = 0;
-        if (! on) { arpHeld.clearQuick(); arpLatched.clearQuick(); }
-        arpWasOn = on;
-    }
-
-    if (! on)
-    {
-        // Pass note events through untouched.
-        for (int i = 0; i < noteEvents.size(); ++i)
-            pass.addEvent (noteEvents.getReference (i), noteSamples.getReference (i));
-        midi.swapWith (pass);
-        return;
-    }
-
-    // ---- Arp on ----
-    // Step duration in samples, derived from tempo + sync division.
-    const int divIdx = (int) (synthParams.arpDiv->load() + 0.5f);
-    const double beats = syncDivToBeats (divIdx);
-    const double bpm   = juce::jmax (20.0, currentBpm);
-    const double stepSamples = juce::jmax (4.0, beats * 60.0 / bpm * sr);
-
-    const int   mode    = (int) (synthParams.arpMode->load() + 0.5f);
-    const int   numOct  = juce::jlimit (1, 4, (int) synthParams.arpOctaves->load());
-    const float gate    = juce::jlimit (0.05f, 1.0f, synthParams.arpGate->load());
-    const float swing   = juce::jlimit (0.0f, 0.5f, synthParams.arpSwing->load());
-
-    // Walk the block, advancing time and emitting events at sub-block points.
-    int cursor = 0;
-    int eventIdx = 0;
-
-    auto applyHeldNoteEvent = [this, latch] (const juce::MidiMessage& msg)
-    {
-        if (msg.isNoteOn())
-        {
-            // Latch behavior: a fresh press while no notes physically held should
-            // start a new chord (clear latched buffer first).
-            if (latch && arpHeld.isEmpty())
-                arpLatched.clearQuick();
-
-            const int n = msg.getNoteNumber();
-            for (int j = arpHeld.size(); --j >= 0;)
-                if (arpHeld.getReference (j).note == n) arpHeld.remove (j);
-            arpHeld.add ({ n, msg.getVelocity() });
-
-            if (latch)
-            {
-                for (int j = arpLatched.size(); --j >= 0;)
-                    if (arpLatched.getReference (j).note == n) arpLatched.remove (j);
-                arpLatched.add ({ n, msg.getVelocity() });
-            }
-        }
-        else if (msg.isNoteOff())
-        {
-            const int n = msg.getNoteNumber();
-            for (int j = arpHeld.size(); --j >= 0;)
-                if (arpHeld.getReference (j).note == n) arpHeld.remove (j);
-        }
-    };
-
-    auto pickStepNote = [&] (const juce::Array<ArpHeldNote>& source) -> ArpHeldNote
-    {
-        // Sorted copy for ordered modes - reuse a member buffer to avoid heap
-        // allocation every step boundary.
-        auto& ordered = arpOrderedBuf;
-        ordered.clearQuick();
-        ordered.addArray (source);
-        std::sort (ordered.begin(), ordered.end(),
-                   [] (const ArpHeldNote& a, const ArpHeldNote& b) { return a.note < b.note; });
-
-        const int N = ordered.size();
-        if (N == 0) return { -1, 0 };
-
-        const int totalSteps = N * numOct;
-
-        auto wrapStep = [&] (int s)
-        {
-            const int m = s % juce::jmax (1, totalSteps);
-            return m < 0 ? m + totalSteps : m;
-        };
-
-        switch (mode)
-        {
-            case ArpMode::Up:
-            {
-                const int s = wrapStep (arpStepIdx);
-                arpOctOffset = (s / N) * 12;
-                return { ordered.getReference (s % N).note + arpOctOffset, ordered.getReference (s % N).velocity };
-            }
-            case ArpMode::Down:
-            {
-                const int s = wrapStep (arpStepIdx);
-                const int rev = totalSteps - 1 - s;
-                arpOctOffset = (rev / N) * 12;
-                return { ordered.getReference (rev % N).note + arpOctOffset, ordered.getReference (rev % N).velocity };
-            }
-            case ArpMode::UpDown:
-            {
-                const int span = juce::jmax (1, 2 * totalSteps - 2);
-                const int s    = ((arpStepIdx % span) + span) % span;
-                const int idx  = (s < totalSteps) ? s : (span - s);
-                arpOctOffset = (idx / N) * 12;
-                return { ordered.getReference (idx % N).note + arpOctOffset, ordered.getReference (idx % N).velocity };
-            }
-            case ArpMode::DownUp:
-            {
-                const int span = juce::jmax (1, 2 * totalSteps - 2);
-                const int s    = ((arpStepIdx % span) + span) % span;
-                const int idxFwd = (s < totalSteps) ? s : (span - s);
-                const int idx    = totalSteps - 1 - idxFwd;
-                arpOctOffset = (idx / N) * 12;
-                return { ordered.getReference (idx % N).note + arpOctOffset, ordered.getReference (idx % N).velocity };
-            }
-            case ArpMode::AsPlayed:
-            {
-                const int s = wrapStep (arpStepIdx);
-                arpOctOffset = (s / N) * 12;
-                return { source.getReference (s % N).note + arpOctOffset, source.getReference (s % N).velocity };
-            }
-            case ArpMode::Random:
-            {
-                const int oct = arpRng.nextInt (numOct);
-                const int idx = arpRng.nextInt (N);
-                return { ordered.getReference (idx).note + oct * 12, ordered.getReference (idx).velocity };
-            }
-        }
-        return { -1, 0 };
-    };
-
-    while (cursor < numSamples)
-    {
-        // Apply any input note events at or before the cursor that we haven't yet processed.
-        while (eventIdx < noteEvents.size() && noteSamples.getReference (eventIdx) <= cursor)
-        {
-            applyHeldNoteEvent (noteEvents.getReference (eventIdx));
-            ++eventIdx;
-        }
-
-        // Active source for picking: physical held + (optionally) latched
-        // extras. Reuse a member buffer so the inner loop allocates nothing.
-        auto& activeSource = arpActiveBuf;
-        activeSource.clearQuick();
-        activeSource.addArray (arpHeld);
-        if (latch)
-        {
-            for (const auto& e : arpLatched)
-            {
-                bool found = false;
-                for (const auto& a : activeSource) if (a.note == e.note) { found = true; break; }
-                if (! found) activeSource.add (e);
-            }
-        }
-
-        // How many samples until the next event boundary?
-        double samplesToNextStep = arpSamplesToStep;
-        const double samplesToInputEvent = (eventIdx < noteEvents.size())
-            ? (double) (noteSamples.getReference (eventIdx) - cursor) : 1e18;
-        const double samplesToOff = (arpSamplesToOff >= 0) ? (double) arpSamplesToOff : 1e18;
-
-        const double dt = std::min ({ (double) (numSamples - cursor),
-                                       samplesToNextStep,
-                                       samplesToInputEvent,
-                                       samplesToOff });
-
-        cursor += (int) dt;
-        arpSamplesToStep -= dt;
-        if (arpSamplesToOff >= 0) arpSamplesToOff -= (int) dt;
-
-        // Fire scheduled note-off if it's now due.
-        if (arpSamplesToOff == 0 && arpCurrentNote >= 0)
-        {
-            pass.addEvent (juce::MidiMessage::noteOff (arpCurrentChan, arpCurrentNote), juce::jmin (cursor, numSamples - 1));
-            arpCurrentNote = -1;
-            arpSamplesToOff = -1;
-        }
-
-        // Step boundary?
-        if (arpSamplesToStep <= 0.0)
-        {
-            // End any still-sounding note (e.g. when gate == 1.0 it overlaps).
-            if (arpCurrentNote >= 0)
-            {
-                pass.addEvent (juce::MidiMessage::noteOff (arpCurrentChan, arpCurrentNote), juce::jmin (cursor, numSamples - 1));
-                arpCurrentNote = -1;
-                arpSamplesToOff = -1;
-            }
-
-            if (! activeSource.isEmpty())
-            {
-                const ArpHeldNote pick = pickStepNote (activeSource);
-                if (pick.note >= 0)
-                {
-                    const int note = juce::jlimit (0, 127, pick.note);
-                    const int vel  = juce::jlimit (1, 127, pick.velocity > 0 ? pick.velocity : 100);
-                    pass.addEvent (juce::MidiMessage::noteOn (arpCurrentChan, note, (juce::uint8) vel),
-                                   juce::jmin (cursor, numSamples - 1));
-                    arpCurrentNote = note;
-                    arpSamplesToOff = juce::jmax (1, (int) (stepSamples * gate));
-                }
-            }
-
-            // Schedule next step. Apply swing on odd steps (delay them).
-            const bool oddStep = (arpStepIdx & 1) != 0;
-            const double stepDur = stepSamples * (oddStep ? (1.0 + swing) : (1.0 - swing));
-            arpSamplesToStep += stepDur;
-            ++arpStepIdx;
-        }
-    }
-
-    // Apply any remaining input events that landed past the loop's tail.
-    while (eventIdx < noteEvents.size())
-    {
-        applyHeldNoteEvent (noteEvents.getReference (eventIdx));
-        ++eventIdx;
-    }
-
-    midi.swapWith (pass);
 }
 
 void VaporKeyAudioProcessor::filterMidi (juce::MidiBuffer& midi)
@@ -484,7 +222,7 @@ void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     // Arpeggiator runs first: it consumes incoming note-on/off events and emits
     // a stepped sequence into the buffer. Mono/legato handling then operates
     // on whatever notes are flowing through (live or arpeggiated).
-    processArpeggiator (midi, buffer.getNumSamples());
+    arp.process (midi, buffer.getNumSamples(), synthParams, currentBpm);
 
     filterMidi (midi);
 

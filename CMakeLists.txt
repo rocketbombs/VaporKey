@@ -50,6 +50,7 @@ target_sources(VaporKey PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/Parameters.cpp
+    Source/Arpeggiator.cpp
     Source/SynthVoice.cpp
     Source/Wavetable.cpp
     Source/LookAndFeel.cpp

@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "Parameters.h"
+#include "Arpeggiator.h"
 
 class VaporKeyAudioProcessor : public juce::AudioProcessor
 {
@@ -60,7 +61,6 @@ public:
 private:
     void updateMacroSums();
     void filterMidi (juce::MidiBuffer& midi);
-    void processArpeggiator (juce::MidiBuffer& midi, int numSamples);
     void markVoicesLegato();
 
     // Silence active voices and clear FX state. Used when loading a preset so
@@ -87,28 +87,12 @@ private:
     // Mono mode helpers
     juce::Array<int> monoHeldNotes;
 
-    // Arpeggiator state. All maintained on the audio thread.
-    struct ArpHeldNote { int note; int velocity; };
-    juce::Array<ArpHeldNote> arpHeld;     // notes physically held by user
-    juce::Array<ArpHeldNote> arpLatched;  // latch buffer (active only when latch is on)
-    bool   arpWasOn         = false;       // detect param transitions
-    int    arpStepIdx       = 0;           // monotonic step counter (cycles pattern)
-    int    arpOctOffset     = 0;           // current octave offset (multiples of 12)
-    double arpSamplesToStep = 0.0;         // samples until next step boundary
-    int    arpSamplesToOff  = -1;          // samples until current note ends (-1 = inactive)
-    int    arpCurrentNote   = -1;          // currently sounding arp note (-1 = none)
-    int    arpCurrentChan   = 1;           // channel of currently sounding note
-    juce::Random arpRng;
+    // Arpeggiator (owns its scratch buffers + held / latched note tables).
+    Arpeggiator arp;
 
-    // Pre-allocated scratch buffers for processArpeggiator / filterMidi so the
-    // audio thread never hits malloc. capacity is reserved once in
-    // prepareToPlay; clearQuick / MidiBuffer::clear keep it.
-    juce::MidiBuffer                  arpPassBuf;
-    juce::Array<juce::MidiMessage>    arpNoteEventsBuf;
-    juce::Array<int>                  arpNoteSamplesBuf;
-    juce::Array<ArpHeldNote>          arpActiveBuf;
-    juce::Array<ArpHeldNote>          arpOrderedBuf;
-    juce::MidiBuffer                  monoFilterBuf;
+    // Pre-allocated MidiBuffer for filterMidi - keeps the audio thread off
+    // malloc when host instances pile up.
+    juce::MidiBuffer monoFilterBuf;
 
     // Cached EQ coefficient inputs so we only rebuild the IIR coefficients
     // when something actually changes (the JUCE make* helpers allocate a
