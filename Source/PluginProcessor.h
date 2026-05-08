@@ -5,6 +5,7 @@
 #include "Arpeggiator.h"
 #include "FxChain.h"
 #include "SynthEngine.h"
+#include "WavetableImport.h"
 
 // Audio-reactive UI state. The audio thread writes; the editor's timers read.
 // Plain floats are fine for the scope ring buffer (occasional tearing is
@@ -79,10 +80,25 @@ public:
     bool         currentPresetIsFactory = true;
 
 private:
-    // Silence active voices and clear FX state. Used when loading a preset so
-    // the old voices/FX tails don't ride the new parameter values and produce
-    // a loud burst (filter cracks, delay/reverb feedback into the new gain).
-    void silenceForPresetSwitch();
+    // Run a preset transition on the message thread. Holds the audio callback
+    // lock across the full sequence required by docs/RealtimeSafety.md:
+    //   1. Take getCallbackLock() so processBlock cannot run.
+    //   2. Silence active voices (engine.allNotesOff) and flush FX tails
+    //      (fx.reset) so old envelope releases and delay/reverb feedback
+    //      can't ride the new patch's gain or filter values.
+    //   3. Run `apply` (the actual APVTS state swap or factory-preset apply).
+    //   4. Release the lock; the next callback runs with clean state.
+    // The previous helper (silenceForPresetSwitch) released the lock before
+    // step 3, leaving a window between silence and the new state where the
+    // callback could run with a clean engine but stale parameters.
+    template <typename ApplyFn>
+    void applyPresetUnderLock (ApplyFn&& apply)
+    {
+        const juce::ScopedLock sl (getCallbackLock());
+        engine.allNotesOff();
+        fx.reset();
+        apply();
+    }
 
     SynthEngine engine;
     Arpeggiator arp;
@@ -94,6 +110,12 @@ private:
 
     // Custom wavetable file paths (kept in apvts state for persistence).
     juce::String customWavPath[3];
+
+    // Owns the lifetime of replaced custom wavetables so the audio thread is
+    // never the last holder of an old shared_ptr (would otherwise run heap
+    // deallocation on the audio path). See WavetableRetirementQueue and
+    // docs/RealtimeSafety.md.
+    WavetableRetirementQueue wavetableRetire;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VaporKeyAudioProcessor)
 };

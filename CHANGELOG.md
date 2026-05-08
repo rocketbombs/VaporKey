@@ -6,6 +6,25 @@ versions may break parameter or preset compatibility.
 
 ## [Unreleased]
 
+### Fixed
+- Mono bus output: voice render and FX chain previously aliased the right
+  channel pointer to the left buffer, then ran every per-channel operation
+  (distortion, EQ, pan summation) twice into the same memory, doubling gain
+  and scrambling cross-channel routing (ping-pong delay, M/S width). Voices
+  now sum L+R to a single mono fold; the FX chain runs on a stereo scratch
+  in mono mode and mixes back down at the end.
+- Preset switching now holds the audio callback lock across silence, FX
+  reset, *and* the APVTS state swap. Previously the lock was released
+  between silence and apply, briefly exposing a "voices muted but
+  parameters still old" intermediate state.
+
+### Changed
+- Custom wavetable lifetime is now managed by an explicit
+  `WavetableRetirementQueue`. Replaced `shared_ptr` instances are handed
+  to a message-thread-owned queue that drops them once their refcount
+  shows the audio thread has moved on, so the heap deallocation never
+  runs on the audio path.
+
 ## [0.4.1] - 2026-05-08
 
 ### Added

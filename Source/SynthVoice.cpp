@@ -163,9 +163,15 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
     filterL.setResonance (fRes);
     filterR.setResonance (fRes);
 
+    // Real mono code path: when the host bus is mono we sum the per-voice L/R
+    // pair down to a single channel and write only outL. Aliasing outR to outL
+    // and writing both would double the per-sample contribution and route
+    // every osc/noise pan position through the same buffer, which read as
+    // "louder + harsher" on a mono bus.
     const int numCh = juce::jmin (2, outputBuffer.getNumChannels());
+    const bool isMono = (numCh == 1);
     auto* outL = outputBuffer.getWritePointer (0, startSample);
-    auto* outR = numCh > 1 ? outputBuffer.getWritePointer (1, startSample) : outL;
+    auto* outR = isMono ? nullptr : outputBuffer.getWritePointer (1, startSample);
 
     struct OP {
         bool on; int shape; float pos; float lin; float panL, panR;
@@ -428,8 +434,15 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
         }
 
         const float g = ampE * ampVelGain;
-        outL[s] += sumL * g;
-        outR[s] += sumR * g;
+        if (isMono)
+        {
+            outL[s] += (sumL + sumR) * 0.5f * g;
+        }
+        else
+        {
+            outL[s] += sumL * g;
+            outR[s] += sumR * g;
+        }
 
         if (! ampEnv.isActive())
         {

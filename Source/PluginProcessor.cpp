@@ -103,17 +103,19 @@ void VaporKeyAudioProcessor::setStateInformation (const void* data, int sizeInBy
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
     {
-        // Mute voices and clear FX tails before swapping in the new state -
-        // otherwise the in-flight envelope releases and delay/reverb feedback
-        // ride the new gain/filter values and produce clicks or bursts on
-        // session reload.
-        silenceForPresetSwitch();
-
-        apvts.replaceState (juce::ValueTree::fromXml (*xml));
+        // Silence + state swap happen atomically under the callback lock so
+        // the audio thread never sees a "voices muted, FX cleared, but
+        // parameters are still the old ones" intermediate state.
+        applyPresetUnderLock ([&]
+        {
+            apvts.replaceState (juce::ValueTree::fromXml (*xml));
+        });
 
         // Restore custom wavetables from any stored paths (best-effort: file
         // may have moved). Only the path strings are persisted; the wavetable
-        // is rebuilt on demand from disk.
+        // is rebuilt on demand from disk. Disk I/O happens outside the
+        // callback lock - the swap itself is RT-safe via the retirement
+        // queue.
         for (int i = 0; i < 3; ++i)
         {
             const auto id = juce::Identifier ("osc" + juce::String (i + 1) + "_wav");
@@ -143,25 +145,17 @@ const juce::String VaporKeyAudioProcessor::getProgramName (int idx)
     return {};
 }
 
-void VaporKeyAudioProcessor::silenceForPresetSwitch()
-{
-    // Hold the audio callback lock so processBlock can't run while we kill
-    // voices and clear FX buffers. Without this the old voices and the delay/
-    // reverb tail would ride the new parameter values for a few ms and
-    // produce a loud burst (filter cracks, feedback into a louder gain).
-    const juce::ScopedLock sl (getCallbackLock());
-
-    engine.allNotesOff();
-    fx.reset();
-}
-
 void VaporKeyAudioProcessor::loadFactoryPreset (int index)
 {
     if (index < 0 || index >= PresetStore::factoryPresetCount()) return;
     currentProgram = index;
 
-    silenceForPresetSwitch();
-    if (! PresetStore::applyFactoryPreset (apvts, *this, index)) return;
+    bool ok = false;
+    applyPresetUnderLock ([&]
+    {
+        ok = PresetStore::applyFactoryPreset (apvts, *this, index);
+    });
+    if (! ok) return;
 
     currentPresetName = PresetStore::factoryPresetNames()[index];
     currentPresetIsFactory = true;
@@ -198,8 +192,10 @@ bool VaporKeyAudioProcessor::loadUserPresetByName (const juce::String& name)
     // kill audio for a click that ultimately fails.
     auto xml = PresetStore::readUserPresetXml (name);
     if (! xml) return false;
-    silenceForPresetSwitch();
-    apvts.replaceState (juce::ValueTree::fromXml (*xml));
+    applyPresetUnderLock ([&]
+    {
+        apvts.replaceState (juce::ValueTree::fromXml (*xml));
+    });
     currentPresetName = name;
     currentPresetIsFactory = false;
     return true;
@@ -228,13 +224,16 @@ bool VaporKeyAudioProcessor::loadCustomWavetable (int oscIndex, const juce::File
     if (oscIndex < 0 || oscIndex >= 3) return false;
     return WavetableImport::loadInto (synthParams.customTables[oscIndex],
                                        customWavPath[oscIndex],
-                                       file);
+                                       file,
+                                       wavetableRetire);
 }
 
 void VaporKeyAudioProcessor::clearCustomWavetable (int oscIndex)
 {
     if (oscIndex < 0 || oscIndex >= 3) return;
-    WavetableImport::clear (synthParams.customTables[oscIndex], customWavPath[oscIndex]);
+    WavetableImport::clear (synthParams.customTables[oscIndex],
+                            customWavPath[oscIndex],
+                            wavetableRetire);
 }
 
 juce::String VaporKeyAudioProcessor::getCustomWavetableName (int oscIndex) const
