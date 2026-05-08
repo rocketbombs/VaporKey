@@ -1,41 +1,61 @@
 # VaporKey
 
-A wavetable synthesizer plugin (VST3 + Standalone) built with [JUCE 8](https://juce.com/), aimed at vaporwave, synthwave, and lo-fi production.
+A 16-voice wavetable synthesizer (VST3 + Standalone) built on [JUCE 8](https://juce.com/),
+tuned for vaporwave, synthwave, and lo-fi production. Three wavetable
+oscillators, two LFOs, four assignable macros, an arpeggiator, and a fixed
+FX chain — wrapped in a single audio-reactive editor.
 
-> **Status: In development.** VaporKey is pre-release software. Features, parameters, and preset formats may change without notice, and saved sessions are not guaranteed to load across versions.
+> **Status: pre-release (0.4.x).** Parameters, preset format, and saved-state
+> compatibility may change without notice between minor versions. See
+> [CHANGELOG.md](CHANGELOG.md) for what landed most recently.
 
 ---
 
-## Overview
+## At a glance
 
-VaporKey is a 16-voice subtractive/wavetable hybrid synth with a built-in arpeggiator, four assignable macros, and an integrated FX chain. It runs as a VST3 plugin or as a standalone application on Windows, macOS, and Linux.
+- **VST3** plugin and **Standalone** application
+- **Windows / macOS (universal) / Linux**
+- **16-voice** polyphony with optional mono / legato / glide
+- **57 factory presets** across Bass, Lead, Pad, Pluck, Keys, Bell, FX, Arp
+- **Realtime-safe** audio path — no allocations, locks, or I/O in `processBlock`
+  (see [docs/RealtimeSafety.md](docs/RealtimeSafety.md))
+- **Validated** on every push with [Tracktion pluginval](https://github.com/Tracktion/pluginval)
+  at strictness 5
 
-## Features
+## Synth engine
 
 **Oscillators**
-- Three wavetable oscillators with nine factory banks (Basic, Saws, Squares, Vocal, Bell, Digital, Harmonic, Glass, Reso), 8 frames each, mip-mapped across 10 octaves
-- Per-oscillator level, pan, coarse/fine tuning, unison (1–7), detune, and phase
-- Drag-and-drop `.wav` import to use custom wavetables
+- Three wavetable oscillators, mip-mapped across 10 octaves, with nine factory
+  banks of 8 frames each: *Basic, Saws, Squares, Vocal, Bell, Digital,
+  Harmonic, Glass, Reso*
+- Per-osc level, pan, coarse/fine tuning, unison (1–7), detune, phase
+- Drag-and-drop `.wav` import for custom wavetables
 - Sub oscillator (sine / square / triangle, –1 or –2 octaves)
-- Noise generator (white / pink / brown)
+- Noise generator (white / pink / brown), per-channel for genuine stereo
 
-**Filter & Modulation**
-- State-variable TPT filter (LP / BP / HP) with cutoff, resonance, drive, key tracking, and velocity
-- Amp ADSR, Mod ADSR (routed to filter), and a decay-only pitch envelope (±24 semitones)
-- Two LFOs with free-run or tempo-synced rates and selectable shapes
-- Four assignable macro knobs covering filter, oscillator, LFO, and FX destinations
+**Filter & envelopes**
+- State-variable TPT filter (LP / BP / HP) with cutoff, resonance, drive,
+  key tracking, and velocity
+- Amp ADSR, Mod ADSR (routes to filter), and a decay-only pitch envelope
+  (±24 semitones)
+
+**Modulation**
+- Two LFOs — free-running or tempo-synced, with multiple shapes
+- Four assignable macros covering filter, oscillator, LFO, and FX destinations
+- **Mod wheel** and **channel aftertouch** as first-class modulation sources,
+  each with its own destination + amount
 
 **Arpeggiator**
-- Modes: Up, Down, Up/Down, Down/Up, As Played, Random
-- Tempo-synced rate, 1–4 octave range, gate, swing, and latch
+- Up, Down, Up/Down, Down/Up, As Played, Random
+- Tempo-synced rate, 1–4 octave range, gate, swing, latch
 
-**Analog Warmth**
+**Analog warmth**
 - *Grit* — per-sample phase jitter
 - *Vibe* — background hiss
 - *Drift* — slow, decorrelated per-oscillator pitch drift
 - *Sat* — soft tanh saturation on the master bus
 
-**FX Chain** (fixed routing)
+**FX chain** *(fixed routing)*
 1. Distortion (Soft / Hard / Fold / Bit)
 2. 3-band EQ (low shelf, parametric mid, high shelf)
 3. Chorus
@@ -45,38 +65,64 @@ VaporKey is a 16-voice subtractive/wavetable hybrid synth with a built-in arpegg
 7. Compressor
 8. Master gain & stereo width
 
-**Voicing & MIDI**
-- 16-voice polyphony, plus mono / legato / glide modes
+**MIDI**
 - Configurable pitch-bend range (1–24 semitones)
-- Mod wheel and channel aftertouch as modulation sources
+- Mod wheel and aftertouch routed through the same per-block mod sum as the macros
 
 **Presets**
-- Factory presets stored in `Source/Presets.json` and embedded at build time, organized by category (Bass, Lead, Pad, Pluck, Keys, Bell, FX, Arp)
-- User presets saved under the system app-data directory (`RocketBombs/VaporKey/Presets`)
+- Factory presets live in [`Source/Presets.json`](Source/Presets.json) and
+  are baked into the binary at build time — fork the JSON to add your own.
+- User presets are saved under the system app-data directory:
+  `RocketBombs/VaporKey/Presets`.
 
 ---
 
-## Building from Source
+## Install
 
-**Requirements:** CMake 3.22+, a C++17 compiler. JUCE 8.0.4 is fetched automatically by CMake.
+### Prebuilt (recommended)
+
+Every push builds and validates VST3 + Standalone for Windows, macOS, and
+Linux. Grab the latest from the
+[Actions tab](https://github.com/rocketbombs/VaporKey/actions) or, for
+tagged releases, the [Releases page](https://github.com/rocketbombs/VaporKey/releases).
+
+| Platform | Drop the `.vst3` here |
+|----------|-----------------------|
+| Windows  | `C:\Program Files\Common Files\VST3\` |
+| macOS    | `~/Library/Audio/Plug-Ins/VST3/` |
+| Linux    | `~/.vst3/` |
+
+On macOS, clear the quarantine attribute after copying so the host will load it:
+
+```bash
+xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/VaporKey.vst3
+```
+
+### Build from source
+
+**Requirements:** CMake 3.22+, a C++17 compiler. JUCE 8.0.4 is fetched
+automatically by CMake.
 
 ```bash
 git clone https://github.com/rocketbombs/VaporKey.git
 cd VaporKey
 cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target VaporKey_VST3 --parallel
+cmake --build build --parallel
 ```
 
-Output: `build/VaporKey_artefacts/Release/VST3/VaporKey.vst3`. A `VaporKey_Standalone` target is also produced.
+Outputs:
 
-### macOS (universal binary)
+- `build/VaporKey_artefacts/Release/VST3/VaporKey.vst3`
+- `build/VaporKey_artefacts/Release/Standalone/VaporKey[.exe|.app]`
+
+#### macOS (universal binary)
 
 ```bash
 cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
-cmake --build build --config Release --target VaporKey_VST3 --parallel
+cmake --build build --config Release --parallel
 ```
 
-### Linux dependencies (Debian / Ubuntu)
+#### Linux dependencies (Debian / Ubuntu)
 
 ```bash
 sudo apt-get install libasound2-dev libjack-jackd2-dev \
@@ -85,43 +131,44 @@ sudo apt-get install libasound2-dev libjack-jackd2-dev \
   libwebkit2gtk-4.1-dev libglu1-mesa-dev mesa-common-dev libgtk-3-dev
 ```
 
-### Install paths
-
-| Platform | VST3 install path |
-|----------|-------------------|
-| Windows  | `C:\Program Files\Common Files\VST3\` |
-| macOS    | `~/Library/Audio/Plug-Ins/VST3/` |
-| Linux    | `~/.vst3/` |
-
-On macOS, you may need to clear the quarantine attribute after copying:
-
-```bash
-xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/VaporKey.vst3
-```
-
 ---
 
-## Project Layout
+## Project layout
 
 ```
 Source/
-  PluginProcessor.{h,cpp}   audio processor, parameter tree, FX chain
-  PluginEditor.{h,cpp}      UI / editor
-  SynthVoice.{h,cpp}        per-voice synthesis
-  Wavetable.{h,cpp}         mip-mapped wavetable oscillator
-  LookAndFeel.{h,cpp}       custom JUCE LookAndFeel
-  Presets.{h,cpp}           factory preset loader
-  Presets.json              factory preset data (embedded at build)
+  PluginProcessor.{h,cpp}    AudioProcessor — owns APVTS, engine, FX, presets
+  PluginEditor.{h,cpp}       editor shell, page switcher, audio-reactive paint loop
+  Parameters.{h,cpp}         APVTS layout + cached atomic pointers (SynthParams)
+  SynthEngine.{h,cpp}        voices, MIDI filter, macro/mod-wheel/aftertouch sum
+  SynthVoice.{h,cpp}         per-voice synthesis (oscs, sub, noise, filter, envs)
+  Wavetable.{h,cpp}          mip-mapped wavetable oscillator
+  WavetableImport.{h,cpp}    drag-and-drop .wav -> custom table
+  Arpeggiator.{h,cpp}        MIDI-rewriting arp, tempo-synced
+  FxChain.{h,cpp}            distortion / EQ / chorus / phaser / delay / reverb / comp / width
+  PresetStore.{h,cpp}        factory + user preset save/load/rename
+  Presets.{h,cpp}            JSON parser for embedded factory presets
+  Presets.json               factory preset data (embedded at build)
+  LookAndFeel.{h,cpp}        custom JUCE LookAndFeel
+  Pages/                     one source pair per editor page
+    OscPage, FilterEnvPage, ModPage, ArpPage, FxPage, MasterPage
+  Widgets/                   reusable UI: VaporWidgets, Meters, EqCurve, WavetableDisplay
+docs/
+  RealtimeSafety.md          rules for anything that runs on the audio thread
 CMakeLists.txt
+.github/workflows/build.yml  Win/mac/Linux build + pluginval validation + tag release
 ```
 
 ## Contributing
 
-The project is in active development and not yet accepting external contributions on a defined schedule. Bug reports and feedback are welcome via the issue tracker.
+The project is in active development; external contributions aren't on a
+defined schedule yet. Bug reports and feedback are very welcome — please open
+an issue. If you submit a patch that touches the audio thread,
+[docs/RealtimeSafety.md](docs/RealtimeSafety.md) is the rulebook.
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for release notes.
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
