@@ -49,7 +49,13 @@ juce_add_binary_data(VaporKeyData SOURCES
 target_sources(VaporKey PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
+    Source/Parameters.cpp
+    Source/SynthEngine.cpp
     Source/SynthVoice.cpp
+    Source/Arpeggiator.cpp
+    Source/FxChain.cpp
+    Source/PresetStore.cpp
+    Source/WavetableImport.cpp
     Source/Wavetable.cpp
     Source/LookAndFeel.cpp
     Source/Presets.cpp

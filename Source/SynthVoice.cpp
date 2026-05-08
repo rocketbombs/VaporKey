@@ -1,5 +1,5 @@
 #include "SynthVoice.h"
-#include "PluginProcessor.h"
+#include "Parameters.h"
 
 WTVoice::WTVoice (SynthParams& p) : params (p)
 {
