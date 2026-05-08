@@ -25,7 +25,17 @@ namespace PresetStore
 
     // User presets -------------------------------------------------------------
 
+    // Canonical path to the user-presets directory. Pure - this does NOT
+    // create the directory on disk. Read-only callers (list / read / delete /
+    // rename) use this so simply opening the editor does not leave behind an
+    // empty RocketBombs/VaporKey/Presets tree on every host.
     juce::File        getUserPresetsDir();
+
+    // Same path as above, but creates the directory if it doesn't already
+    // exist. Use this immediately before writing - currently saveUserPreset
+    // and any UI that wants to reveal the folder to the user.
+    juce::File        ensureUserPresetsDir();
+
     juce::StringArray getUserPresetNames();
 
     bool saveUserPreset (juce::AudioProcessorValueTreeState& apvts, const juce::String& name);

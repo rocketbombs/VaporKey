@@ -51,10 +51,15 @@ bool PresetStore::applyFactoryPreset (juce::AudioProcessorValueTreeState& apvts,
 
 juce::File PresetStore::getUserPresetsDir()
 {
-    auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("RocketBombs")
-                   .getChildFile ("VaporKey")
-                   .getChildFile ("Presets");
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("RocketBombs")
+               .getChildFile ("VaporKey")
+               .getChildFile ("Presets");
+}
+
+juce::File PresetStore::ensureUserPresetsDir()
+{
+    auto dir = getUserPresetsDir();
     if (! dir.exists()) dir.createDirectory();
     return dir;
 }
@@ -62,8 +67,9 @@ juce::File PresetStore::getUserPresetsDir()
 juce::StringArray PresetStore::getUserPresetNames()
 {
     juce::StringArray names;
-    auto dir = getUserPresetsDir();
-    auto files = dir.findChildFiles (juce::File::findFiles, false, "*.vkpreset");
+    // findChildFiles on a non-existent directory returns an empty array, so
+    // listing presets before any have been saved is a clean no-op.
+    auto files = getUserPresetsDir().findChildFiles (juce::File::findFiles, false, "*.vkpreset");
     for (auto& f : files) names.add (f.getFileNameWithoutExtension());
     names.sort (false);
     return names;
@@ -73,7 +79,7 @@ bool PresetStore::saveUserPreset (juce::AudioProcessorValueTreeState& apvts, con
 {
     auto safeName = juce::File::createLegalFileName (name).trim();
     if (safeName.isEmpty()) return false;
-    auto file = getUserPresetsDir().getChildFile (safeName + ".vkpreset");
+    auto file = ensureUserPresetsDir().getChildFile (safeName + ".vkpreset");
     if (auto xml = apvts.copyState().createXml())
         return xml->writeTo (file);
     return false;

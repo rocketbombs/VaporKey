@@ -174,7 +174,11 @@ juce::StringArray VaporKeyAudioProcessor::factoryPresetNames()
 
 juce::File VaporKeyAudioProcessor::getUserPresetsDir() const
 {
-    return PresetStore::getUserPresetsDir();
+    // Route the public-facing accessor through the creating helper: any caller
+    // (e.g. a future "Open user presets folder" button) gets a usable path.
+    // Internal read paths in PresetStore use the pure getter so that simply
+    // opening the editor doesn't materialise an empty Presets directory.
+    return PresetStore::ensureUserPresetsDir();
 }
 
 juce::StringArray VaporKeyAudioProcessor::getUserPresetNames() const

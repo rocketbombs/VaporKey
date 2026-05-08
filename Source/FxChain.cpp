@@ -55,7 +55,7 @@ void FxChain::prepare (double sampleRate, int samplesPerBlock)
     delaySmoothedR.reset (sampleRate, 0.05);
 
     // Force EQ coefficients to be rebuilt on the first block at the new rate.
-    prevEqLowG = prevEqMidG = prevEqMidF = prevEqHighG = 1.0e9f;
+    eqLowDirty = eqMidDirty = eqHighDirty = true;
 }
 
 void FxChain::reset()
@@ -141,24 +141,27 @@ void FxChain::process (juce::AudioBuffer<float>& buffer, double currentBpm)
         if (std::abs (lowG) + std::abs (midG) + std::abs (highG) > 0.05f)
         {
             constexpr float kEqEps = 1.0e-6f;
-            if (std::abs (lowG - prevEqLowG) > kEqEps)
+            if (eqLowDirty || std::abs (lowG - prevEqLowG) > kEqEps)
             {
                 *eqLowL.coefficients = *juce::dsp::IIR::Coefficients<float>::makeLowShelf (sr, 200.0f, 0.707f, juce::Decibels::decibelsToGain (lowG));
                 *eqLowR.coefficients = *eqLowL.coefficients;
                 prevEqLowG = lowG;
+                eqLowDirty = false;
             }
-            if (std::abs (midG - prevEqMidG) > kEqEps || std::abs (midF - prevEqMidF) > kEqEps)
+            if (eqMidDirty || std::abs (midG - prevEqMidG) > kEqEps || std::abs (midF - prevEqMidF) > kEqEps)
             {
                 *eqMidL.coefficients = *juce::dsp::IIR::Coefficients<float>::makePeakFilter (sr, midF, 0.8f, juce::Decibels::decibelsToGain (midG));
                 *eqMidR.coefficients = *eqMidL.coefficients;
                 prevEqMidG = midG;
                 prevEqMidF = midF;
+                eqMidDirty = false;
             }
-            if (std::abs (highG - prevEqHighG) > kEqEps)
+            if (eqHighDirty || std::abs (highG - prevEqHighG) > kEqEps)
             {
                 *eqHighL.coefficients = *juce::dsp::IIR::Coefficients<float>::makeHighShelf (sr, 5000.0f, 0.707f, juce::Decibels::decibelsToGain (highG));
                 *eqHighR.coefficients = *eqHighL.coefficients;
                 prevEqHighG = highG;
+                eqHighDirty = false;
             }
 
             for (int i = 0; i < n; ++i)

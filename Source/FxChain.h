@@ -37,9 +37,15 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> delaySmoothedL, delaySmoothedR;
 
     // Cached EQ inputs so we only rebuild the IIR coefficients when something
-    // actually changes (the JUCE make* helpers allocate every call).
-    float prevEqLowG  = 1.0e9f; // sentinel: forces first build
-    float prevEqMidG  = 1.0e9f;
-    float prevEqMidF  = 1.0e9f;
-    float prevEqHighG = 1.0e9f;
+    // actually changes (the JUCE make* helpers allocate every call). The
+    // dirty flags force a fresh build on the first audible block and after
+    // every prepare(); subsequent blocks rebuild only when the corresponding
+    // parameter has moved by more than a small epsilon.
+    bool  eqLowDirty  = true;
+    bool  eqMidDirty  = true;
+    bool  eqHighDirty = true;
+    float prevEqLowG  = 0.0f;
+    float prevEqMidG  = 0.0f;
+    float prevEqMidF  = 0.0f;
+    float prevEqHighG = 0.0f;
 };
