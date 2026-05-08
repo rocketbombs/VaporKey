@@ -194,8 +194,12 @@ bool VaporKeyAudioProcessor::saveUserPreset (const juce::String& name)
 
 bool VaporKeyAudioProcessor::loadUserPresetByName (const juce::String& name)
 {
+    // Parse before silencing so a missing or corrupt file doesn't briefly
+    // kill audio for a click that ultimately fails.
+    auto xml = PresetStore::readUserPresetXml (name);
+    if (! xml) return false;
     silenceForPresetSwitch();
-    if (! PresetStore::loadUserPresetByName (apvts, name)) return false;
+    apvts.replaceState (juce::ValueTree::fromXml (*xml));
     currentPresetName = name;
     currentPresetIsFactory = false;
     return true;

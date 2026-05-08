@@ -29,7 +29,12 @@ namespace PresetStore
     juce::StringArray getUserPresetNames();
 
     bool saveUserPreset (juce::AudioProcessorValueTreeState& apvts, const juce::String& name);
-    bool loadUserPresetByName (juce::AudioProcessorValueTreeState& apvts, const juce::String& name);
+
+    // Read and parse a user preset file into an XML tree. Returns nullptr if
+    // the file is missing or unparseable. Stateless - no APVTS changes happen
+    // here, the caller decides when to silence and apply.
+    std::unique_ptr<juce::XmlElement> readUserPresetXml (const juce::String& name);
+
     bool deleteUserPreset (const juce::String& name);
     bool renameUserPreset (const juce::String& oldName, const juce::String& newName);
 }

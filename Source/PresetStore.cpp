@@ -67,16 +67,11 @@ bool PresetStore::saveUserPreset (juce::AudioProcessorValueTreeState& apvts, con
     return false;
 }
 
-bool PresetStore::loadUserPresetByName (juce::AudioProcessorValueTreeState& apvts, const juce::String& name)
+std::unique_ptr<juce::XmlElement> PresetStore::readUserPresetXml (const juce::String& name)
 {
     auto file = getUserPresetsDir().getChildFile (name + ".vkpreset");
-    if (! file.existsAsFile()) return false;
-    if (auto xml = juce::XmlDocument::parse (file))
-    {
-        apvts.replaceState (juce::ValueTree::fromXml (*xml));
-        return true;
-    }
-    return false;
+    if (! file.existsAsFile()) return nullptr;
+    return juce::XmlDocument::parse (file);
 }
 
 bool PresetStore::deleteUserPreset (const juce::String& name)
