@@ -119,6 +119,10 @@ CMakeLists.txt
 
 The project is in active development and not yet accepting external contributions on a defined schedule. Bug reports and feedback are welcome via the issue tracker.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).

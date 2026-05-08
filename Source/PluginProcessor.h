@@ -240,6 +240,7 @@ private:
     void updateMacroSums();
     void filterMidi (juce::MidiBuffer& midi);
     void processArpeggiator (juce::MidiBuffer& midi, int numSamples);
+    void markVoicesLegato();
 
     // Silence active voices and clear FX state. Used when loading a preset so
     // the old voices/FX tails don't ride the new parameter values and produce
@@ -270,7 +271,6 @@ private:
     juce::Array<ArpHeldNote> arpHeld;     // notes physically held by user
     juce::Array<ArpHeldNote> arpLatched;  // latch buffer (active only when latch is on)
     bool   arpWasOn         = false;       // detect param transitions
-    bool   arpUpDir         = true;        // direction state for Up/Down + Down/Up
     int    arpStepIdx       = 0;           // monotonic step counter (cycles pattern)
     int    arpOctOffset     = 0;           // current octave offset (multiples of 12)
     double arpSamplesToStep = 0.0;         // samples until next step boundary

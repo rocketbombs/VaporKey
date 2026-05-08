@@ -52,22 +52,29 @@ float WTVoice::nextLfo (int shape, float phase, float& shStateVal, float& shTime
 
 void WTVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound*, int /*pwPos*/)
 {
+    const bool legatoTransition = legatoSkipEnvRetrigger;
+    legatoSkipEnvRetrigger = false;
+
     currentNote = midiNote;
     baseFreqTarget = (float) juce::MidiMessage::getMidiNoteInHertz (midiNote);
     if (baseFreqCurrent <= 0.0f) baseFreqCurrent = baseFreqTarget;
 
     velocityNorm = velocity;
-    noteHeld = true;
 
+    // For a legato transition we keep the existing envelope state so the note
+    // glides smoothly without re-attacking. ADSR parameters still get refreshed
+    // in case the patch changed mid-phrase.
     juce::ADSR::Parameters ampP { *params.aA, *params.aD, *params.aS, *params.aR };
     juce::ADSR::Parameters modP { *params.mA, *params.mD, *params.mS, *params.mR };
     ampEnv.setParameters (ampP);
     modEnv.setParameters (modP);
-    ampEnv.noteOn();
-    modEnv.noteOn();
 
-    // Pitch env: re-init level to 1.0; decay coef set to reach ~1% in pEnvDecay
+    if (! legatoTransition)
     {
+        ampEnv.noteOn();
+        modEnv.noteOn();
+
+        // Pitch env: re-init level to 1.0; decay coef set to reach ~1% in pEnvDecay.
         const float dec = juce::jmax (0.001f, params.pEnvDecay->load());
         pEnvDecayCoef = std::exp (std::log (0.01f) / (dec * (float) sr));
         pEnvLevel = 1.0f;
@@ -84,47 +91,27 @@ void WTVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound*, 
         }
     }
 
-    // Start phases
-    for (int i = 0; i < 3; ++i)
+    if (! legatoTransition)
     {
-        const float ph = juce::jlimit (-1.0f, 1.0f, params.osc[i].phase->load());
-        for (auto& u : osc[i].uPhases) u = (ph < 0.0f) ? rng.nextFloat() : ph;
-        osc[i].driftPhase = rng.nextFloat();
+        // Start phases - skipped on legato so the oscillators keep running
+        // continuously through the pitch glide.
+        for (int i = 0; i < 3; ++i)
+        {
+            const float ph = juce::jlimit (-1.0f, 1.0f, params.osc[i].phase->load());
+            for (auto& u : osc[i].uPhases) u = (ph < 0.0f) ? rng.nextFloat() : ph;
+            osc[i].driftPhase = rng.nextFloat();
+        }
+        subPhase = 0.0f;
+        for (auto& v : pinkBL) v = 0.0f;
+        for (auto& v : pinkBR) v = 0.0f;
+        brownStateL = brownStateR = 0.0f;
+
+        filterL.reset(); filterR.reset();
     }
-    subPhase = 0.0f;
-    for (auto& v : pinkBL) v = 0.0f;
-    for (auto& v : pinkBR) v = 0.0f;
-    brownStateL = brownStateR = 0.0f;
-
-    filterL.reset(); filterR.reset();
-}
-
-void WTVoice::retargetNote (int midiNote, float velocity, bool retriggerEnvelopes)
-{
-    currentNote = midiNote;
-    baseFreqTarget = (float) juce::MidiMessage::getMidiNoteInHertz (midiNote);
-    velocityNorm = velocity;
-    noteHeld = true;
-
-    if (retriggerEnvelopes)
-    {
-        juce::ADSR::Parameters ampP { *params.aA, *params.aD, *params.aS, *params.aR };
-        juce::ADSR::Parameters modP { *params.mA, *params.mD, *params.mS, *params.mR };
-        ampEnv.setParameters (ampP);
-        modEnv.setParameters (modP);
-        ampEnv.noteOn();
-        modEnv.noteOn();
-        pEnvLevel = 1.0f;
-    }
-
-    const float gt = juce::jmax (0.0f, params.glide->load());
-    if (gt <= 0.0001f) { glideCoef = 1.0f; baseFreqCurrent = baseFreqTarget; }
-    else               { glideCoef = 1.0f - std::exp (-1.0f / (gt * (float) sr * 0.2f)); }
 }
 
 void WTVoice::stopNote (float, bool allowTailOff)
 {
-    noteHeld = false;
     if (allowTailOff)
     {
         ampEnv.noteOff();

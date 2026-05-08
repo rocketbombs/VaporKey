@@ -45,7 +45,7 @@ jobs:
           if-no-files-found: ignore
 
   macos:
-    name: Build (macOS VST3 + AU)
+    name: Build (macOS VST3)
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -54,13 +54,20 @@ jobs:
         run: cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
 
       - name: Build
-        run: cmake --build build --config Release --target VaporKey_VST3 --parallel
+        run: cmake --build build --config Release --parallel
 
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
           name: VaporKey-macOS-VST3
           path: build/VaporKey_artefacts/Release/VST3/VaporKey.vst3
+
+      - name: Upload Standalone
+        uses: actions/upload-artifact@v4
+        with:
+          name: VaporKey-macOS-Standalone
+          path: build/VaporKey_artefacts/Release/Standalone/VaporKey.app
+          if-no-files-found: ignore
 
   linux:
     name: Build (Linux VST3)
@@ -80,10 +87,17 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --target VaporKey_VST3 --parallel
+        run: cmake --build build --parallel
 
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
           name: VaporKey-Linux-VST3
           path: build/VaporKey_artefacts/Release/VST3/VaporKey.vst3
+
+      - name: Upload Standalone
+        uses: actions/upload-artifact@v4
+        with:
+          name: VaporKey-Linux-Standalone
+          path: build/VaporKey_artefacts/Release/Standalone/VaporKey
+          if-no-files-found: ignore

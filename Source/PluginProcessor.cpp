@@ -317,6 +317,7 @@ void VaporKeyAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     arpNoteSamplesBuf.ensureStorageAllocated (256);
     arpActiveBuf.ensureStorageAllocated (32);
     arpOrderedBuf.ensureStorageAllocated (32);
+    monoHeldNotes.ensureStorageAllocated (64);
 
     // Force EQ coefficients to be rebuilt on the first block at the new rate.
     prevEqLowG = prevEqMidG = prevEqMidF = prevEqHighG = 1.0e9f;
@@ -379,7 +380,6 @@ void VaporKeyAudioProcessor::processArpeggiator (juce::MidiBuffer& midi, int num
         arpSamplesToStep = 0.0;
         arpStepIdx = 0;
         arpOctOffset = 0;
-        arpUpDir = true;
         if (! on) { arpHeld.clearQuick(); arpLatched.clearQuick(); }
         arpWasOn = on;
     }
@@ -638,18 +638,21 @@ void VaporKeyAudioProcessor::filterMidi (juce::MidiBuffer& midi)
 
         if (monoMode && msg.isNoteOn())
         {
-            // Insert note-offs for currently held notes (last-note priority).
+            // Mono = last-note priority: turn off whatever was sounding before
+            // letting the new note through. The synth then steals the freed
+            // voice for the new note, so a single voice always carries the
+            // melody.
             for (int n : monoHeldNotes)
                 if (n != msg.getNoteNumber())
                     out.addEvent (juce::MidiMessage::noteOff (msg.getChannel(), n), sample);
 
+            // Legato: ask the voice that's about to be (re)started to leave
+            // its envelopes alone. Together with last-note priority above and
+            // voice stealing on the synth, this glides the existing voice into
+            // the new pitch instead of re-attacking.
             if (legato && ! monoHeldNotes.isEmpty())
-            {
-                // For legato we still emit a note on (host expects it) — voices will retarget.
-                // To keep envelope sustained, we ALSO mark this so the voice retargets without restart.
-                // We handle that by sending a controller hint — easiest: just emit note-on; voice/synth
-                // will steal and retrigger envs (acceptable behavior).
-            }
+                markVoicesLegato();
+
             monoHeldNotes.removeAllInstancesOf (msg.getNoteNumber());
             monoHeldNotes.add (msg.getNoteNumber());
             out.addEvent (msg, sample);
@@ -662,6 +665,7 @@ void VaporKeyAudioProcessor::filterMidi (juce::MidiBuffer& midi)
             if (! monoHeldNotes.isEmpty())
             {
                 const int n = monoHeldNotes.getLast();
+                if (legato) markVoicesLegato();
                 out.addEvent (msg, sample); // emit the off
                 out.addEvent (juce::MidiMessage::noteOn (msg.getChannel(), n, (juce::uint8) 100), sample);
                 continue;
@@ -671,6 +675,16 @@ void VaporKeyAudioProcessor::filterMidi (juce::MidiBuffer& midi)
         out.addEvent (msg, sample);
     }
     midi.swapWith (out);
+}
+
+// Flag every voice as "next startNote is a legato transition - keep envelopes
+// running". The synth picks one voice to steal for the new note; only that
+// voice consumes the flag, the rest leave it cleared on their next startNote.
+void VaporKeyAudioProcessor::markVoicesLegato()
+{
+    for (int i = 0; i < synth.getNumVoices(); ++i)
+        if (auto* v = dynamic_cast<WTVoice*> (synth.getVoice (i)))
+            v->setLegatoSkipEnvRetrigger (true);
 }
 
 static inline float distort (float x, int type, float drive)
@@ -943,6 +957,12 @@ void VaporKeyAudioProcessor::setStateInformation (const void* data, int sizeInBy
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
     {
+        // Mute voices and clear FX tails before swapping in the new state -
+        // otherwise the in-flight envelope releases and delay/reverb feedback
+        // ride the new gain/filter values and produce clicks or bursts on
+        // session reload.
+        silenceForPresetSwitch();
+
         apvts.replaceState (juce::ValueTree::fromXml (*xml));
 
         // Restore custom wavetables from any stored paths (best-effort: file
