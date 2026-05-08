@@ -14,9 +14,41 @@ env:
   PLUGINVAL_STRICTNESS: "5"
 
 jobs:
+  preset-lint:
+    name: Lint factory presets
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev \
+            libcurl4-openssl-dev libfreetype6-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev \
+            libwebkit2gtk-4.1-dev libglu1-mesa-dev mesa-common-dev libgtk-3-dev
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build lint tool
+        run: cmake --build build --target VaporKeyPresetLint --parallel
+
+      - name: Run preset lint
+        run: |
+          set -euo pipefail
+          BIN=$(find build -type f \( -name VaporKeyPresetLint -o -name 'VaporKeyPresetLint.exe' \) -perm -u+x | head -n1)
+          if [ -z "$BIN" ]; then
+            echo "VaporKeyPresetLint binary not found under build/" >&2
+            exit 1
+          fi
+          echo "Running $BIN against Source/Presets.json"
+          "$BIN" Source/Presets.json
+
   windows:
     name: Build (Windows VST3)
     runs-on: windows-2022
+    needs: preset-lint
     steps:
       - uses: actions/checkout@v4
 
@@ -63,6 +95,7 @@ jobs:
   macos:
     name: Build (macOS VST3)
     runs-on: macos-14
+    needs: preset-lint
     steps:
       - uses: actions/checkout@v4
 
@@ -99,6 +132,7 @@ jobs:
   linux:
     name: Build (Linux VST3)
     runs-on: ubuntu-22.04
+    needs: preset-lint
     steps:
       - uses: actions/checkout@v4
 

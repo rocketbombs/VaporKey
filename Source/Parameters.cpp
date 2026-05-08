@@ -7,16 +7,15 @@ namespace Parameters
 {
 namespace
 {
-    // A single declaration of every parameter the plugin owns. Each entry
-    // carries enough information to (a) construct the JUCE parameter for the
-    // APVTS layout and (b) bind the matching std::atomic<float>* into the
-    // SynthParams cache. createLayout() and cache() both iterate this list,
-    // so adding or renaming a parameter is a one-line change.
+    // The internal registry pairs the public Spec (the metadata we want to
+    // share with tooling) with the bind closure that wires the corresponding
+    // std::atomic<float>* into a SynthParams field. createLayout() and
+    // cache() both walk this list, so adding or renaming a parameter is a
+    // one-line change in buildRegistry() below.
     struct Entry
     {
-        juce::String id;
-        std::function<std::unique_ptr<juce::RangedAudioParameter>()>     make;
-        std::function<void (SynthParams&, std::atomic<float>*)>          bind;
+        Spec                                                       spec;
+        std::function<void (SynthParams&, std::atomic<float>*)>   bind;
     };
 
     // bindTo() accepts either a pointer-to-member (e.g. &SynthParams::fCut)
@@ -39,48 +38,48 @@ namespace
         auto addF = [&r] (juce::String id, juce::String label,
                           juce::NormalisableRange<float> range, float def, auto target)
         {
-            r.push_back ({ id,
-                [id, label, range, def]
-                {
-                    return std::make_unique<juce::AudioParameterFloat> (
-                        juce::ParameterID { id, 1 }, label, range, def);
-                },
-                bindTo (target) });
+            Spec s;
+            s.id = std::move (id);
+            s.label = std::move (label);
+            s.kind = Spec::Kind::Float;
+            s.floatRange = range;
+            s.defaultValue = def;
+            r.push_back ({ std::move (s), bindTo (target) });
         };
 
         auto addI = [&r] (juce::String id, juce::String label,
                           int min, int max, int def, auto target)
         {
-            r.push_back ({ id,
-                [id, label, min, max, def]
-                {
-                    return std::make_unique<juce::AudioParameterInt> (
-                        juce::ParameterID { id, 1 }, label, min, max, def);
-                },
-                bindTo (target) });
+            Spec s;
+            s.id = std::move (id);
+            s.label = std::move (label);
+            s.kind = Spec::Kind::Int;
+            s.intMin = min;
+            s.intMax = max;
+            s.defaultValue = (float) def;
+            r.push_back ({ std::move (s), bindTo (target) });
         };
 
         auto addB = [&r] (juce::String id, juce::String label, bool def, auto target)
         {
-            r.push_back ({ id,
-                [id, label, def]
-                {
-                    return std::make_unique<juce::AudioParameterBool> (
-                        juce::ParameterID { id, 1 }, label, def);
-                },
-                bindTo (target) });
+            Spec s;
+            s.id = std::move (id);
+            s.label = std::move (label);
+            s.kind = Spec::Kind::Bool;
+            s.defaultValue = def ? 1.0f : 0.0f;
+            r.push_back ({ std::move (s), bindTo (target) });
         };
 
         auto addC = [&r] (juce::String id, juce::String label,
                           juce::StringArray choices, int def, auto target)
         {
-            r.push_back ({ id,
-                [id, label, choices, def]
-                {
-                    return std::make_unique<juce::AudioParameterChoice> (
-                        juce::ParameterID { id, 1 }, label, choices, def);
-                },
-                bindTo (target) });
+            Spec s;
+            s.id = std::move (id);
+            s.label = std::move (label);
+            s.kind = Spec::Kind::Choice;
+            s.choices = std::move (choices);
+            s.defaultValue = (float) def;
+            r.push_back ({ std::move (s), bindTo (target) });
         };
 
         // Oscillators
@@ -255,26 +254,76 @@ namespace
 
         return r;
     }
-}
+
+    const std::vector<Entry>& registry()
+    {
+        static const std::vector<Entry> r = buildRegistry();
+        return r;
+    }
+
+    std::unique_ptr<juce::RangedAudioParameter> makeParam (const Spec& s)
+    {
+        const juce::ParameterID pid { s.id, 1 };
+        switch (s.kind)
+        {
+            case Spec::Kind::Float:
+                return std::make_unique<juce::AudioParameterFloat> (
+                    pid, s.label, s.floatRange, s.defaultValue);
+            case Spec::Kind::Int:
+                return std::make_unique<juce::AudioParameterInt> (
+                    pid, s.label, s.intMin, s.intMax, (int) s.defaultValue);
+            case Spec::Kind::Bool:
+                return std::make_unique<juce::AudioParameterBool> (
+                    pid, s.label, s.defaultValue >= 0.5f);
+            case Spec::Kind::Choice:
+                return std::make_unique<juce::AudioParameterChoice> (
+                    pid, s.label, s.choices, (int) s.defaultValue);
+        }
+        jassertfalse;
+        return {};
+    }
+} // namespace
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 {
-    auto reg = buildRegistry();
+    const auto& reg = registry();
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> v;
     v.reserve (reg.size());
-    for (auto& e : reg)
-        v.push_back (e.make());
+    for (const auto& e : reg)
+        v.push_back (makeParam (e.spec));
     return { v.begin(), v.end() };
 }
 
 void cache (SynthParams& sp, juce::AudioProcessorValueTreeState& apvts)
 {
-    for (auto& e : buildRegistry())
+    for (const auto& e : registry())
     {
-        auto* p = apvts.getRawParameterValue (e.id);
+        auto* p = apvts.getRawParameterValue (e.spec.id);
         jassert (p != nullptr);
         e.bind (sp, p);
     }
 }
+
+const std::vector<Spec>& allSpecs()
+{
+    static const std::vector<Spec> specs = []
+    {
+        const auto& reg = registry();
+        std::vector<Spec> out;
+        out.reserve (reg.size());
+        for (const auto& e : reg) out.push_back (e.spec);
+        return out;
+    }();
+    return specs;
+}
+
+const Spec* findSpec (juce::StringRef id)
+{
+    for (const auto& s : allSpecs())
+        if (s.id == id) return &s;
+    return nullptr;
+}
+
+bool exists (juce::StringRef id) { return findSpec (id) != nullptr; }
 
 } // namespace Parameters

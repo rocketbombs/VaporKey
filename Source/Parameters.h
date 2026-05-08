@@ -174,10 +174,51 @@ struct SynthParams
 
 namespace Parameters
 {
+    // Public, plain-data description of one parameter. The internal registry
+    // owns a Spec per parameter, and createLayout() / cache() both derive
+    // from those Specs - so external tooling (preset linter, docs generator,
+    // tests) can introspect the same authoritative source.
+    struct Spec
+    {
+        enum class Kind { Float, Int, Bool, Choice };
+
+        juce::String      id;
+        juce::String      label;
+        Kind              kind { Kind::Float };
+
+        // Populated for Kind::Float. For non-float kinds the range is left
+        // default-constructed and should not be consulted.
+        juce::NormalisableRange<float> floatRange;
+
+        // Populated for Kind::Int. Inclusive range.
+        int               intMin { 0 };
+        int               intMax { 0 };
+
+        // Numeric default. For Bool, 0.0/1.0. For Choice, the chosen index.
+        float             defaultValue { 0.0f };
+
+        // Populated for Kind::Choice. Order is the index space the JUCE
+        // parameter uses, so a stored "0" means choices[0].
+        juce::StringArray choices;
+    };
+
     // APVTS factory: declares every parameter the plugin owns.
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
     // Resolves every cached pointer in `sp` from `apvts`. Call once after
     // APVTS construction; pointers are stable for the plugin's lifetime.
     void cache (SynthParams& sp, juce::AudioProcessorValueTreeState& apvts);
+
+    // Registry introspection. The vector is built once and returned by
+    // reference for the lifetime of the program. Order matches the order in
+    // which parameters are added to the APVTS layout.
+    const std::vector<Spec>& allSpecs();
+
+    // Linear lookup by id. Returns nullptr if no parameter with that id is
+    // registered. Cheap enough for tooling/tests; do not call from the
+    // audio thread.
+    const Spec* findSpec (juce::StringRef id);
+
+    // Convenience predicate equivalent to `findSpec(id) != nullptr`.
+    bool exists (juce::StringRef id);
 }
