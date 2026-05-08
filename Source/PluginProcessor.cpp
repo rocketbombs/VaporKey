@@ -317,6 +317,8 @@ void VaporKeyAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     arpNoteSamplesBuf.ensureStorageAllocated (256);
     arpActiveBuf.ensureStorageAllocated (32);
     arpOrderedBuf.ensureStorageAllocated (32);
+    arpHeld.ensureStorageAllocated (32);
+    arpLatched.ensureStorageAllocated (32);
     monoHeldNotes.ensureStorageAllocated (64);
 
     // Force EQ coefficients to be rebuilt on the first block at the new rate.
@@ -677,14 +679,17 @@ void VaporKeyAudioProcessor::filterMidi (juce::MidiBuffer& midi)
     midi.swapWith (out);
 }
 
-// Flag every voice as "next startNote is a legato transition - keep envelopes
-// running". The synth picks one voice to steal for the new note; only that
-// voice consumes the flag, the rest leave it cleared on their next startNote.
+// Flag currently-playing voices as "next startNote is a legato transition -
+// keep envelopes running". The synth steals one of the active voices for the
+// new note; that voice consumes the flag inside startNote. We deliberately
+// skip idle voices so the flag can't leak across a mono->poly switch (idle
+// voices that get retriggered later would otherwise skip their attack).
 void VaporKeyAudioProcessor::markVoicesLegato()
 {
     for (int i = 0; i < synth.getNumVoices(); ++i)
         if (auto* v = dynamic_cast<WTVoice*> (synth.getVoice (i)))
-            v->setLegatoSkipEnvRetrigger (true);
+            if (v->isVoiceActive())
+                v->setLegatoSkipEnvRetrigger (true);
 }
 
 static inline float distort (float x, int type, float drive)
