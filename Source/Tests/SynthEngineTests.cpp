@@ -217,7 +217,7 @@ VK_TEST (SynthEngine_MonoModeSilencesPriorNote)
     int sounding60 = 0;
     for (int i = 0; i < h.engine.synth().getNumVoices(); ++i)
     {
-        auto* v = dynamic_cast<WTVoice*> (h.engine.synth().getVoice (i));
+        auto* v = h.engine.synth().getVoice (i);
         if (v != nullptr && v->isVoiceActive() && v->getCurrentlyPlayingNote() == 60)
             ++sounding60;
     }
@@ -248,7 +248,7 @@ VK_TEST (SynthEngine_MonoNoteOffFallsBackToHeld)
     int sounding60 = 0;
     for (int i = 0; i < h.engine.synth().getNumVoices(); ++i)
     {
-        auto* v = dynamic_cast<WTVoice*> (h.engine.synth().getVoice (i));
+        auto* v = h.engine.synth().getVoice (i);
         if (v != nullptr && v->isVoiceActive() && v->getCurrentlyPlayingNote() == 60)
             ++sounding60;
     }

@@ -96,8 +96,11 @@ VK_TEST (Presets_EveryFactoryPresetApplies)
                                        + " left " + s.id + " out of int range");
                     break;
                 case Parameters::Spec::Kind::Bool:
-                    VK_EXPECT (v == 0.0f || v == 1.0f);
+                {
+                    const int rounded = (int) std::round (v);
+                    VK_EXPECT (rounded == 0 || rounded == 1);
                     break;
+                }
                 case Parameters::Spec::Kind::Choice:
                     VK_EXPECT_MSG ((int) std::round (v) >= 0
                                 && (int) std::round (v) < s.choices.size(),
@@ -137,7 +140,11 @@ VK_TEST (Presets_StateSaveRestoreRoundTrip)
     // Reset and verify the snapshot diverged (so the round-trip is meaningful).
     resetParametersToDefaults (tp);
     const auto reset = snapshot (tp);
-    VK_EXPECT (before.find ("f_cut")->second != reset.find ("f_cut")->second);
+    // Use a tolerant compare instead of != on floats so -Wfloat-equal stays
+    // happy; the divergence we tweaked (3500 vs default 12000) is far larger
+    // than any rounding slop.
+    VK_EXPECT_GT (std::abs (before.find ("f_cut")->second
+                            - reset.find ("f_cut")->second), 100.0f);
 
     tp.setStateInformation (state.getData(), (int) state.getSize());
     const auto after = snapshot (tp);

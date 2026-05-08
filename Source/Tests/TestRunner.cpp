@@ -142,12 +142,12 @@ int Registry::runAll (juce::StringRef filter)
 
 int main (int argc, char** argv)
 {
-    // Initialise enough of JUCE for the message manager to exist (the
-    // WavetableRetirementQueue constructs a juce::Timer that wants one).
-    // The tests never dispatch a message loop, so we don't need GUI
-    // initialisation - keeps the link line free of juce_gui_basics.
-    juce::initialiseJuce_NonGUI();
-    struct Shutdown { ~Shutdown() { juce::shutdownJuce_NonGUI(); } } shutdownGuard;
+    // Boot enough of JUCE for a message manager to exist - the
+    // WavetableRetirementQueue's juce::Timer wants one. JUCE 8 dropped the
+    // explicit non-GUI initialiser, so we use the GUI variant; juce_gui_basics
+    // is already pulled in transitively by juce_audio_processors and tests
+    // never open a real window.
+    juce::ScopedJuceInitialiser_GUI initialiser;
 
     juce::String filter;
     bool listOnly = false;

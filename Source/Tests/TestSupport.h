@@ -46,7 +46,12 @@ public:
     void prepareToPlay (double, int) override {}
     void releaseResources() override {}
     bool isBusesLayoutSupported (const BusesLayout&) const override { return true; }
+
+    // Bring the double-precision overload into scope explicitly so GCC's
+    // -Woverloaded-virtual doesn't flag the float override as "hiding" it.
+    using juce::AudioProcessor::processBlock;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+
     juce::AudioProcessorEditor* createEditor() override { return nullptr; }
     bool hasEditor() const override                     { return false; }
 

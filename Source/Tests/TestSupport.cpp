@@ -59,7 +59,10 @@ void renderAudio (TestProcessor& tp,
                   int blockSize,
                   double bpm)
 {
-    juce::ignoreUnused (tp);
+    // tp / sampleRate are accepted purely for symmetry with the production
+    // processBlock signature - the engine and fx are already prepared by
+    // the caller's harness, so we don't re-prepare here.
+    juce::ignoreUnused (tp, sampleRate);
     outBuffer.clear();
     if (totalSamples <= 0) return;
 
