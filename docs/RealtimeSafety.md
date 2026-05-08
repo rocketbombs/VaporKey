@@ -55,10 +55,16 @@ it again.
   fresh every block by `SynthEngine::updateMacroSums` and read by voices and
   `FxChain` in the same block. No cross-thread access; no atomic needed.
 - **Custom wavetables** (`SynthParams::customTables[i]`) is a
-  `std::shared_ptr<Wavetable>`. The message thread publishes a new table via
-  `std::atomic_store`; voices observe the swap with `std::atomic_load`. The
-  old table is freed when the last voice's local snapshot drops it - never
-  on the audio thread (the message thread holds the previous ref).
+  `WavetableSlot` per oscillator (see `Source/WavetableSlot.h`). Voices read
+  on the audio thread with `snapshot()` (an atomic-load + a per-block
+  refcount bump). The message thread publishes with `swap()` / `clear()`,
+  which atomic-stores the new pointer and parks the outgoing one in a
+  per-slot retired list. `drain()` (called from `swap` / `clear`, message
+  thread only) releases retired entries once their `use_count() == 1` -
+  i.e. every audio reader has dropped its snapshot, and the retired list
+  itself is the sole remaining owner. The destructor therefore always runs
+  on the message thread; the audio thread cannot trigger `~Wavetable()` and
+  its frame-array `free()`.
 - **VisData** (peak / RMS / scope ring buffer) is single-writer (audio
   thread, end of `processBlock`), many-reader (UI timers). Plain `float`
   ring + `std::atomic<uint32_t>` write index with `release` ordering. UI

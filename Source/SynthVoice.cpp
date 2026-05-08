@@ -189,8 +189,7 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
         op[i].shape  = rawChoice (params.osc[i].shape);
         if (op[i].shape == WavetableLibrary::Custom)
         {
-            // TODO(C++20): see Parameters.h customTables comment.
-            customSnap[i] = std::atomic_load (&params.customTables[i]);
+            customSnap[i] = params.customTables[i].snapshot();
             op[i].table = customSnap[i] ? customSnap[i].get()
                                         : &lib.getTable (WavetableLibrary::Basic);
         }

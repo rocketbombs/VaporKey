@@ -1,8 +1,7 @@
 #include "WavetableImport.h"
-#include <atomic>
 #include <vector>
 
-bool WavetableImport::loadInto (std::shared_ptr<Wavetable>& target,
+bool WavetableImport::loadInto (WavetableSlot& target,
                                 juce::String& pathOut,
                                 const juce::File& file)
 {
@@ -41,17 +40,14 @@ bool WavetableImport::loadInto (std::shared_ptr<Wavetable>& target,
     auto newTable = std::make_shared<Wavetable>();
     newTable->buildFromMonoAudio (mono.data(), total);
 
-    // TODO(C++20): see Parameters.h customTables comment.
-    std::atomic_store (&target, newTable);
+    target.swap (std::move (newTable));
     pathOut = file.getFullPathName();
     return true;
 }
 
-void WavetableImport::clear (std::shared_ptr<Wavetable>& target, juce::String& pathOut)
+void WavetableImport::clear (WavetableSlot& target, juce::String& pathOut)
 {
-    std::shared_ptr<Wavetable> empty;
-    // TODO(C++20): see Parameters.h customTables comment.
-    std::atomic_store (&target, empty);
+    target.clear();
     pathOut.clear();
 }
 

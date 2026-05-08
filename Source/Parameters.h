@@ -3,6 +3,7 @@
 #include <atomic>
 #include <memory>
 #include "Wavetable.h"
+#include "WavetableSlot.h"
 
 // Modulation destinations addressable by macros and MIDI sources.
 namespace ModDest {
@@ -156,14 +157,12 @@ struct SynthParams
     std::atomic<float>* arpSwing{};
     std::atomic<float>* arpLatch{};
 
-    // Per-oscillator user wavetables. Published atomically from the message
-    // thread (drag-and-drop / file chooser); voices and the UI snapshot the
-    // current value with std::atomic_load on a non-atomic shared_ptr. That
-    // free-function overload is deprecated in C++20 and removed in C++26.
-    // When the project bumps the language standard, change this field to
-    // std::atomic<std::shared_ptr<Wavetable>> and switch the call sites
-    // (search "TODO(C++20)") to .load() / .store() on the field directly.
-    std::shared_ptr<Wavetable> customTables[3];
+    // Per-oscillator user wavetables. The audio thread reads via
+    // customTables[i].snapshot(); the message thread publishes via swap() /
+    // clear(). See WavetableSlot.h for the cross-thread lifetime contract -
+    // in short, destruction always happens on the message thread, never
+    // inside processBlock.
+    WavetableSlot customTables[3];
 
     // Live MIDI state from processor (per voice reads these atomics).
     std::atomic<float>  pitchBendSemis { 0.0f };
