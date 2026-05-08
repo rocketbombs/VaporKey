@@ -1,7 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "SynthVoice.h"
-#include "Presets.h"
+#include "PresetStore.h"
 #include "WavetableImport.h"
 #include <algorithm>
 #include <initializer_list>
@@ -274,7 +274,7 @@ void VaporKeyAudioProcessor::setStateInformation (const void* data, int sizeInBy
     }
 }
 
-int VaporKeyAudioProcessor::getNumPrograms() { return (int) VKPresets::all().size(); }
+int VaporKeyAudioProcessor::getNumPrograms() { return (int) PresetStore::factoryAll().size(); }
 int VaporKeyAudioProcessor::getCurrentProgram() { return currentProgram; }
 void VaporKeyAudioProcessor::setCurrentProgram (int idx)
 {
@@ -283,7 +283,7 @@ void VaporKeyAudioProcessor::setCurrentProgram (int idx)
 }
 const juce::String VaporKeyAudioProcessor::getProgramName (int idx)
 {
-    const auto& list = VKPresets::all();
+    const auto& list = PresetStore::factoryAll();
     if (idx >= 0 && idx < (int) list.size()) return juce::String (list[(size_t) idx].name);
     return {};
 }
@@ -302,26 +302,12 @@ void VaporKeyAudioProcessor::silenceForPresetSwitch()
 
 void VaporKeyAudioProcessor::loadFactoryPreset (int index)
 {
-    const auto& list = VKPresets::all();
+    const auto& list = PresetStore::factoryAll();
     if (index < 0 || index >= (int) list.size()) return;
     currentProgram = index;
 
     silenceForPresetSwitch();
-
-    // Reset to defaults first by re-creating defaults from parameter ranges.
-    for (auto* param : getParameters())
-        if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (param))
-            p->setValueNotifyingHost (p->getDefaultValue());
-
-    for (const auto& kv : list[(size_t) index].values)
-    {
-        if (auto* p = apvts.getParameter (kv.id))
-        {
-            const auto& range = p->getNormalisableRange();
-            const float norm = range.convertTo0to1 (kv.v);
-            p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, norm));
-        }
-    }
+    PresetStore::applyFactory (*this, apvts, index);
 
     currentPresetName = juce::String (list[(size_t) index].name);
     currentPresetIsFactory = true;
@@ -329,72 +315,44 @@ void VaporKeyAudioProcessor::loadFactoryPreset (int index)
 
 juce::File VaporKeyAudioProcessor::getUserPresetsDir() const
 {
-    auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("RocketBombs")
-                   .getChildFile ("VaporKey")
-                   .getChildFile ("Presets");
-    if (! dir.exists()) dir.createDirectory();
-    return dir;
+    return PresetStore::userDir();
 }
 
 juce::StringArray VaporKeyAudioProcessor::getUserPresetNames() const
 {
-    juce::StringArray names;
-    auto dir = getUserPresetsDir();
-    auto files = dir.findChildFiles (juce::File::findFiles, false, "*.vkpreset");
-    for (auto& f : files) names.add (f.getFileNameWithoutExtension());
-    names.sort (false);
-    return names;
+    return PresetStore::userList();
 }
 
 bool VaporKeyAudioProcessor::saveUserPreset (const juce::String& name)
 {
     auto safeName = juce::File::createLegalFileName (name).trim();
-    if (safeName.isEmpty()) return false;
-    auto file = getUserPresetsDir().getChildFile (safeName + ".vkpreset");
-    if (auto xml = apvts.copyState().createXml())
-    {
-        if (! xml->writeTo (file)) return false;
-        currentPresetName = safeName;
-        currentPresetIsFactory = false;
-        return true;
-    }
-    return false;
+    if (! PresetStore::userSave (apvts, safeName)) return false;
+    currentPresetName = safeName;
+    currentPresetIsFactory = false;
+    return true;
 }
 
 bool VaporKeyAudioProcessor::loadUserPresetByName (const juce::String& name)
 {
-    auto file = getUserPresetsDir().getChildFile (name + ".vkpreset");
-    if (! file.existsAsFile()) return false;
-    if (auto xml = juce::XmlDocument::parse (file))
-    {
-        silenceForPresetSwitch();
-        apvts.replaceState (juce::ValueTree::fromXml (*xml));
-        currentPresetName = name;
-        currentPresetIsFactory = false;
-        return true;
-    }
-    return false;
+    silenceForPresetSwitch();
+    if (! PresetStore::userLoad (apvts, name)) return false;
+    currentPresetName = name;
+    currentPresetIsFactory = false;
+    return true;
 }
 
 bool VaporKeyAudioProcessor::deleteUserPreset (const juce::String& name)
 {
-    auto file = getUserPresetsDir().getChildFile (name + ".vkpreset");
-    if (! file.existsAsFile()) return false;
-    const bool ok = file.deleteFile();
-    if (ok && currentPresetName == name && ! currentPresetIsFactory)
+    if (! PresetStore::userDelete (name)) return false;
+    if (currentPresetName == name && ! currentPresetIsFactory)
         currentPresetName.clear();
-    return ok;
+    return true;
 }
 
 bool VaporKeyAudioProcessor::renameUserPreset (const juce::String& oldName, const juce::String& newName)
 {
     auto safeNew = juce::File::createLegalFileName (newName).trim();
-    if (safeNew.isEmpty() || safeNew == oldName) return false;
-    auto src = getUserPresetsDir().getChildFile (oldName + ".vkpreset");
-    auto dst = getUserPresetsDir().getChildFile (safeNew + ".vkpreset");
-    if (! src.existsAsFile() || dst.existsAsFile()) return false;
-    if (! src.moveFileTo (dst)) return false;
+    if (! PresetStore::userRename (oldName, safeNew)) return false;
     if (currentPresetName == oldName && ! currentPresetIsFactory)
         currentPresetName = safeNew;
     return true;
@@ -402,9 +360,7 @@ bool VaporKeyAudioProcessor::renameUserPreset (const juce::String& oldName, cons
 
 juce::StringArray VaporKeyAudioProcessor::factoryPresetNames()
 {
-    juce::StringArray names;
-    for (const auto& p : VKPresets::all()) names.add (p.name);
-    return names;
+    return PresetStore::factoryNames();
 }
 
 bool VaporKeyAudioProcessor::loadCustomWavetable (int oscIndex, const juce::File& file)

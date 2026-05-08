@@ -1,5 +1,5 @@
 #include "PluginEditor.h"
-#include "Presets.h"
+#include "PresetStore.h"
 
 using namespace VK;
 
@@ -1453,11 +1453,11 @@ void MasterPage::PresetListModel::paintListBoxItem (int row, juce::Graphics& g,
     g.drawText (entry.name, 36, 0, juce::jmax (40, nameRight - 36), height, juce::Justification::centredLeft);
 
     // Category tag on the right (factory only)
-    if (entry.isFactory && entry.category >= 0 && entry.category < VKPresets::NumCategories)
+    if (entry.isFactory && entry.category >= 0 && entry.category < PresetStore::NumCategories)
     {
         g.setFont (Fonts::small());
         g.setColour (Colors::neonCyan.withAlpha (0.6f));
-        g.drawText (juce::String (VKPresets::categoryShortName (entry.category)).toUpperCase(),
+        g.drawText (juce::String (PresetStore::categoryShortName (entry.category)).toUpperCase(),
                     width - 120, 0, 50, height, juce::Justification::centredRight);
     }
 
@@ -1479,7 +1479,7 @@ void MasterPage::rebuildEntries()
 {
     entries.clear();
 
-    const auto& factory = VKPresets::all();
+    const auto& factory = PresetStore::factoryAll();
     for (const auto& p : factory)
         entries.push_back ({ juce::String (p.name), true, p.category });
 
@@ -1497,7 +1497,7 @@ void MasterPage::rebuildVisible()
     //   2..1+N       = factory category (Bass, Lead, Pad, Pluck, Keys, Bell, FX, Arp)
     //   2+N          = User
     const int sel = categoryFilter.getSelectedId();
-    const int N   = (int) VKPresets::NumCategories;
+    const int N   = (int) PresetStore::NumCategories;
 
     for (size_t i = 0; i < entries.size(); ++i)
     {
@@ -1719,7 +1719,7 @@ MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
 
     categoryFilter.addItem ("All", 1);
     {
-        const auto cats = VKPresets::categoryNames();
+        const auto cats = PresetStore::categoryNames();
         for (int i = 0; i < cats.size(); ++i)
             categoryFilter.addItem (cats[i], 2 + i);
         categoryFilter.addItem ("User", 2 + cats.size());

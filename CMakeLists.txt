@@ -56,7 +56,7 @@ target_sources(VaporKey PRIVATE
     Source/Wavetable.cpp
     Source/WavetableImport.cpp
     Source/LookAndFeel.cpp
-    Source/Presets.cpp
+    Source/PresetStore.cpp
 )
 
 target_compile_definitions(VaporKey PRIVATE
