@@ -202,6 +202,14 @@ private:
         std::unique_ptr<VaporCombo> dest;
     };
     MacroUI macros[SynthParams::kNumMacros];
+
+    // Mod wheel + aftertouch behave like macros whose value is supplied by
+    // MIDI rather than a knob - so they only need destination + amount.
+    struct MidiSrcUI {
+        std::unique_ptr<VaporKnob>  amt;
+        std::unique_ptr<VaporCombo> dest;
+    };
+    MidiSrcUI mwUI, atUI;
 };
 
 class ArpPage : public juce::Component

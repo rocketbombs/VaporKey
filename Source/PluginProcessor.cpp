@@ -171,6 +171,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout VaporKeyAudioProcessor::crea
                                             "Macro " + juce::String (m + 1) + " Amt", juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f));
     }
 
+    // MIDI mod sources: the value is whatever the controller is sending; the
+    // user picks a destination and an amount.
+    v.push_back (std::make_unique<PC> (juce::ParameterID { "mw_dest", 1 }, "Mod Wheel Dest", destNames, 0));
+    v.push_back (std::make_unique<P>  (juce::ParameterID { "mw_amt",  1 }, "Mod Wheel Amt",  juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f));
+    v.push_back (std::make_unique<PC> (juce::ParameterID { "at_dest", 1 }, "Aftertouch Dest", destNames, 0));
+    v.push_back (std::make_unique<P>  (juce::ParameterID { "at_amt",  1 }, "Aftertouch Amt",  juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f));
+
     return { v.begin(), v.end() };
 }
 
@@ -275,6 +282,9 @@ void VaporKeyAudioProcessor::cacheParams()
         synthParams.macroAmt[m]  = getF (prefix + "amt");
     }
 
+    synthParams.mwDest = getF ("mw_dest"); synthParams.mwAmt = getF ("mw_amt");
+    synthParams.atDest = getF ("at_dest"); synthParams.atAmt = getF ("at_amt");
+
     synthParams.arpOn      = getF ("arp_on");
     synthParams.arpMode    = getF ("arp_mode");
     synthParams.arpDiv     = getF ("arp_div");
@@ -342,6 +352,15 @@ void VaporKeyAudioProcessor::updateMacroSums()
         const float amt = synthParams.macroAmt[m]->load();   // -1..1
         synthParams.modSum[dest] += val * amt;
     }
+
+    auto applyMidiSource = [this] (std::atomic<float>* destP, std::atomic<float>* amtP, float val01)
+    {
+        const int dest = (int) (destP->load() + 0.5f);
+        if (dest <= ModDest::None || dest >= ModDest::NumDests) return;
+        synthParams.modSum[dest] += val01 * amtP->load();
+    };
+    applyMidiSource (synthParams.mwDest, synthParams.mwAmt, synthParams.modWheel.load());
+    applyMidiSource (synthParams.atDest, synthParams.atAmt, synthParams.aftertouch.load());
 }
 
 void VaporKeyAudioProcessor::processArpeggiator (juce::MidiBuffer& midi, int numSamples)
