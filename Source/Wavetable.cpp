@@ -36,7 +36,11 @@ void Wavetable::buildMipsFromTimeDomain (Frame& out, const std::array<float, kFr
             wave[(size_t) n] = work[(size_t) n];
             peak = juce::jmax (peak, std::abs (wave[(size_t) n]));
         }
-        if (peak > 1.0e-6f)
+        // 1e-3 (~-60 dB) is below any audible content but well above 16-bit
+        // quantisation residue. Without the higher floor a near-silent input
+        // (e.g. a stereo wav whose channels cancel after the mono mix-down)
+        // gets amplified to full scale.
+        if (peak > 1.0e-3f)
             for (auto& v : wave) v *= 0.99f / peak;
     }
 }
@@ -62,9 +66,13 @@ void Wavetable::buildFromMonoAudio (const float* samples, int numSamples)
         }
 
         // Per-frame normalize to keep loud frames from dwarfing quiet ones.
+        // Threshold matches buildMipsFromTimeDomain: anything quieter than
+        // ~-60 dB is treated as silence and left untouched, so quantisation
+        // residue from a phase-cancelling stereo wav does not get inflated
+        // to full scale by the divide.
         float peak = 0.0f;
         for (float v : base) peak = juce::jmax (peak, std::abs (v));
-        if (peak > 1.0e-6f)
+        if (peak > 1.0e-3f)
             for (auto& v : base) v /= peak;
 
         buildMipsFromTimeDomain (frames[(size_t) f], base);

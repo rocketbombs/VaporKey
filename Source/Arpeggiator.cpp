@@ -31,6 +31,16 @@ void Arpeggiator::process (juce::MidiBuffer& midi, int numSamples, double curren
     const bool on    = *params.arpOn > 0.5f;
     const bool latch = *params.arpLatch > 0.5f;
 
+    // Step duration in samples, derived from tempo + sync division. Computed
+    // up-front so the arp-on transition handler can use it to defer the first
+    // step by one full cycle (otherwise pressing a chord at the same instant
+    // the arp turns on fires the lowest note immediately, before the user-
+    // perceived "next beat", and skews every ordered-mode sequence by one).
+    const int    divIdx       = (int) (params.arpDiv->load() + 0.5f);
+    const double beats        = syncDivToBeats (divIdx);
+    const double bpm          = juce::jmax (20.0, currentBpm);
+    const double stepSamples  = juce::jmax (4.0, beats * 60.0 / bpm * sr);
+
     auto& pass        = passBuf;
     auto& noteEvents  = noteEventsBuf;
     auto& noteSamples = noteSamplesBuf;
@@ -59,7 +69,10 @@ void Arpeggiator::process (juce::MidiBuffer& midi, int numSamples, double curren
             pass.addEvent (juce::MidiMessage::noteOff (currentChan, currentNote), 0);
         currentNote = -1;
         samplesToOff = -1;
-        samplesToStep = 0.0;
+        // Defer the first step by one full cycle on power-on so step 0 fires
+        // strictly after the chord is registered (matches the rest of the
+        // sequence: chord visible, then step, not the other way round).
+        samplesToStep = on ? stepSamples : 0.0;
         stepIdx = 0;
         octOffset = 0;
         if (! on) { held.clearQuick(); latched.clearQuick(); }
@@ -75,12 +88,7 @@ void Arpeggiator::process (juce::MidiBuffer& midi, int numSamples, double curren
         return;
     }
 
-    // ---- Arp on ----
-    // Step duration in samples, derived from tempo + sync division.
-    const int divIdx = (int) (params.arpDiv->load() + 0.5f);
-    const double beats = syncDivToBeats (divIdx);
-    const double bpm   = juce::jmax (20.0, currentBpm);
-    const double stepSamples = juce::jmax (4.0, beats * 60.0 / bpm * sr);
+    // ---- Arp on ---- (stepSamples already computed above)
 
     const int   mode    = (int) (params.arpMode->load() + 0.5f);
     const int   numOct  = juce::jlimit (1, 4, (int) params.arpOctaves->load());

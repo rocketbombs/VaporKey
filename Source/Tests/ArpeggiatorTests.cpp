@@ -172,8 +172,10 @@ VK_TEST (Arpeggiator_UpDownModeReversesAtPeak)
     juce::MidiBuffer chordIn = pressChord ({ 60, 64, 67 });
     h.arp.process (chordIn, 32, 120.0);
 
+    // 1/32 at 120 BPM = 3000 samples per step; we need to drive at least
+    // 5 * 3000 samples to capture the full reversal pattern.
     std::vector<int> seq;
-    for (int b = 0; b < 14; ++b)
+    for (int b = 0; b < 16; ++b)
     {
         juce::MidiBuffer m;
         h.arp.process (m, 1024, 120.0);
