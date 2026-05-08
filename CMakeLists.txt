@@ -90,3 +90,40 @@ target_link_libraries(VaporKey PRIVATE
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
+
+# Preset linter: validates Source/Presets.json against the parameter registry
+# exposed by Parameters.h. Run as:
+#   cmake --build build --target VaporKeyPresetLint
+#   <path/to>/VaporKeyPresetLint Source/Presets.json
+#
+# CI invokes this before pluginval so a stale parameter id or out-of-range
+# preset value fails fast.
+juce_add_console_app(VaporKeyPresetLint
+    PRODUCT_NAME "VaporKeyPresetLint"
+)
+
+juce_generate_juce_header(VaporKeyPresetLint)
+
+target_sources(VaporKeyPresetLint PRIVATE
+    Source/PresetLint.cpp
+    Source/Parameters.cpp
+    Source/Wavetable.cpp
+)
+
+target_compile_definitions(VaporKeyPresetLint PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_REPORT_APP_USAGE=0
+    JUCE_STRICT_REFCOUNTEDPOINTER=1
+)
+
+target_link_libraries(VaporKeyPresetLint PRIVATE
+    juce::juce_audio_processors
+    juce::juce_audio_basics
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
