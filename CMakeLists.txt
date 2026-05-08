@@ -139,3 +139,65 @@ target_link_libraries(VaporKeyPresetLint PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
+
+# Validation suite: unit + audio-regression tests for the synth engine,
+# arpeggiator, FX chain, wavetable mip-mapping, .wav import, presets, and
+# end-to-end audio. Run as:
+#   cmake --build build --target VaporKeyTests
+#   <path/to>/VaporKeyTests              # all suites
+#   <path/to>/VaporKeyTests <substring>  # only tests whose name matches
+#
+# CI runs this on Linux after the preset lint and before pluginval; failures
+# fail the build.
+juce_add_console_app(VaporKeyTests
+    PRODUCT_NAME "VaporKeyTests"
+)
+
+juce_generate_juce_header(VaporKeyTests)
+
+target_sources(VaporKeyTests PRIVATE
+    Source/Tests/TestRunner.cpp
+    Source/Tests/TestSupport.cpp
+    Source/Tests/ParametersTests.cpp
+    Source/Tests/WavetableTests.cpp
+    Source/Tests/WavetableImportTests.cpp
+    Source/Tests/SynthEngineTests.cpp
+    Source/Tests/ArpeggiatorTests.cpp
+    Source/Tests/FxChainTests.cpp
+    Source/Tests/PresetTests.cpp
+    Source/Tests/AudioRegressionTests.cpp
+
+    # The same source files as the plugin minus the GUI: the test runner
+    # constructs a minimal AudioProcessor (TestProcessor) instead of the
+    # real plugin so we don't pull in the editor / pages / widgets.
+    Source/Parameters.cpp
+    Source/SynthEngine.cpp
+    Source/SynthVoice.cpp
+    Source/Arpeggiator.cpp
+    Source/FxChain.cpp
+    Source/PresetStore.cpp
+    Source/Presets.cpp
+    Source/Wavetable.cpp
+    Source/WavetableImport.cpp
+)
+
+target_compile_definitions(VaporKeyTests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_REPORT_APP_USAGE=0
+    JUCE_STRICT_REFCOUNTEDPOINTER=1
+)
+
+target_link_libraries(VaporKeyTests PRIVATE
+    VaporKeyData
+    juce::juce_audio_processors
+    juce::juce_audio_basics
+    juce::juce_audio_formats
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_dsp
+    juce::juce_events
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)

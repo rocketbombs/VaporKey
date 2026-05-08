@@ -6,6 +6,17 @@ versions may break parameter or preset compatibility.
 
 ## [Unreleased]
 
+### Added
+- **Validation suite (`VaporKeyTests`).** New CMake target builds a single
+  console runner that exercises the synth engine, arpeggiator, FX chain,
+  wavetable mip-mapping, .wav import, parameter registry, factory presets,
+  state save/restore, and end-to-end audio (CPU budget + click-free preset
+  switch). Tests cover MIDI edge cases (mono/legato fall-back, pitch-bend
+  range, mod wheel, aftertouch, voice stealing) and adversarial signal flow
+  (extreme drives + feedback paths checked for NaN/Inf/denormals). CI runs
+  the full suite on Linux (`xvfb-run`) between the preset linter and the
+  per-platform pluginval pass.
+
 ### Fixed
 - Mono bus output: voice render and FX chain previously aliased the right
   channel pointer to the left buffer, then ran every per-channel operation
