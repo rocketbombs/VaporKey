@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "Parameters.h"
 #include "Arpeggiator.h"
+#include "FxChain.h"
 
 class VaporKeyAudioProcessor : public juce::AudioProcessor
 {
@@ -69,16 +70,7 @@ private:
     void silenceForPresetSwitch();
 
     juce::Synthesiser synth;
-
-    // FX
-    juce::dsp::Chorus<float> chorusFx;
-    juce::dsp::Phaser<float> phaserFx;
-    juce::dsp::Compressor<float> compFx;
-    juce::dsp::IIR::Filter<float> eqLowL, eqLowR, eqMidL, eqMidR, eqHighL, eqHighR;
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayL { 192000 };
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayR { 192000 };
-    juce::Reverb reverbFx;
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> delaySmoothedL, delaySmoothedR;
+    FxChain fx;
 
     double sr = 44100.0;
     double currentBpm = 120.0;
@@ -93,14 +85,6 @@ private:
     // Pre-allocated MidiBuffer for filterMidi - keeps the audio thread off
     // malloc when host instances pile up.
     juce::MidiBuffer monoFilterBuf;
-
-    // Cached EQ coefficient inputs so we only rebuild the IIR coefficients
-    // when something actually changes (the JUCE make* helpers allocate a
-    // ReferenceCountedObject every call - lethal on the audio thread).
-    float  prevEqLowG  = 1.0e9f;  // sentinel: forces first build
-    float  prevEqMidG  = 1.0e9f;
-    float  prevEqMidF  = 1.0e9f;
-    float  prevEqHighG = 1.0e9f;
 
     // Custom wavetable file paths (kept in apvts state for persistence).
     juce::String customWavPath[3];
