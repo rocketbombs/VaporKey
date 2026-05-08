@@ -79,11 +79,6 @@ public:
     bool         currentPresetIsFactory = true;
 
 private:
-    // Silence active voices and clear FX state. Used when loading a preset so
-    // the old voices/FX tails don't ride the new parameter values and produce
-    // a loud burst (filter cracks, delay/reverb feedback into the new gain).
-    void silenceForPresetSwitch();
-
     SynthEngine engine;
     Arpeggiator arp;
     FxChain     fx;

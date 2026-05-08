@@ -129,32 +129,38 @@ void VaporKeyAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 
 void VaporKeyAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    if (auto xml = getXmlFromBinary (data, sizeInBytes))
+    auto xml = getXmlFromBinary (data, sizeInBytes);
+    if (! xml) return;
+
+    // Hold the callback lock for the full silence -> reset -> APVTS replace
+    // sequence (RealtimeSafety.md: preset apply is atomic from the audio
+    // thread's point of view). Without this, processBlock could run between
+    // the silencing and the state replacement and briefly drive in-flight
+    // voices and FX tails through partially-updated parameters - audible as
+    // clicks or filter cracks on session reload.
     {
-        // Mute voices and clear FX tails before swapping in the new state -
-        // otherwise the in-flight envelope releases and delay/reverb feedback
-        // ride the new gain/filter values and produce clicks or bursts on
-        // session reload.
-        silenceForPresetSwitch();
-
+        const juce::ScopedLock sl (getCallbackLock());
+        engine.allNotesOff();
+        fx.reset();
         apvts.replaceState (juce::ValueTree::fromXml (*xml));
-
-        // Restore custom wavetables from any stored paths (best-effort: file
-        // may have moved). Only the path strings are persisted; the wavetable
-        // is rebuilt on demand from disk.
-        for (int i = 0; i < 3; ++i)
-        {
-            const auto id = juce::Identifier ("osc" + juce::String (i + 1) + "_wav");
-            const auto path = apvts.state.getProperty (id).toString();
-            clearCustomWavetable (i);
-            if (path.isNotEmpty())
-                loadCustomWavetable (i, juce::File (path));
-        }
-
-        // Host-restored state: we no longer know which named preset this corresponds to.
-        currentPresetName = "(unnamed)";
-        currentPresetIsFactory = false;
     }
+
+    // Restore custom wavetables from any stored paths (best-effort: file
+    // may have moved). This is deliberately outside the callback lock - it
+    // does file I/O, and the wavetable publish path is already lock-free
+    // (atomic shared_ptr swap; voices observe on the next block).
+    for (int i = 0; i < 3; ++i)
+    {
+        const auto id = juce::Identifier ("osc" + juce::String (i + 1) + "_wav");
+        const auto path = apvts.state.getProperty (id).toString();
+        clearCustomWavetable (i);
+        if (path.isNotEmpty())
+            loadCustomWavetable (i, juce::File (path));
+    }
+
+    // Host-restored state: we no longer know which named preset this corresponds to.
+    currentPresetName = "(unnamed)";
+    currentPresetIsFactory = false;
 }
 
 int VaporKeyAudioProcessor::getNumPrograms() { return PresetStore::factoryPresetCount(); }
@@ -171,25 +177,23 @@ const juce::String VaporKeyAudioProcessor::getProgramName (int idx)
     return {};
 }
 
-void VaporKeyAudioProcessor::silenceForPresetSwitch()
-{
-    // Hold the audio callback lock so processBlock can't run while we kill
-    // voices and clear FX buffers. Without this the old voices and the delay/
-    // reverb tail would ride the new parameter values for a few ms and
-    // produce a loud burst (filter cracks, feedback into a louder gain).
-    const juce::ScopedLock sl (getCallbackLock());
-
-    engine.allNotesOff();
-    fx.reset();
-}
-
 void VaporKeyAudioProcessor::loadFactoryPreset (int index)
 {
     if (index < 0 || index >= PresetStore::factoryPresetCount()) return;
     currentProgram = index;
 
-    silenceForPresetSwitch();
-    if (! PresetStore::applyFactoryPreset (apvts, *this, index)) return;
+    // RealtimeSafety.md: preset apply is atomic from the audio thread's
+    // point of view. Hold the callback lock for the full silence -> reset
+    // -> APVTS overwrite so processBlock can't see a partially-applied
+    // state (e.g. old envelope tail running through new gain).
+    bool ok;
+    {
+        const juce::ScopedLock sl (getCallbackLock());
+        engine.allNotesOff();
+        fx.reset();
+        ok = PresetStore::applyFactoryPreset (apvts, *this, index);
+    }
+    if (! ok) return;
 
     currentPresetName = PresetStore::factoryPresetNames()[index];
     currentPresetIsFactory = true;
@@ -230,8 +234,16 @@ bool VaporKeyAudioProcessor::loadUserPresetByName (const juce::String& name)
     // kill audio for a click that ultimately fails.
     auto xml = PresetStore::readUserPresetXml (name);
     if (! xml) return false;
-    silenceForPresetSwitch();
-    apvts.replaceState (juce::ValueTree::fromXml (*xml));
+
+    // Hold the callback lock for the full silence -> reset -> APVTS replace.
+    // See loadFactoryPreset and RealtimeSafety.md for the invariant.
+    {
+        const juce::ScopedLock sl (getCallbackLock());
+        engine.allNotesOff();
+        fx.reset();
+        apvts.replaceState (juce::ValueTree::fromXml (*xml));
+    }
+
     currentPresetName = name;
     currentPresetIsFactory = false;
     return true;
