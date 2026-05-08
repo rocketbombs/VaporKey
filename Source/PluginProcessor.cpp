@@ -1,6 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-#include "SynthVoice.h"
+#include "Voice.h"
 #include "PresetStore.h"
 #include "WavetableImport.h"
 #include <algorithm>

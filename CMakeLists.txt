@@ -52,7 +52,7 @@ target_sources(VaporKey PRIVATE
     Source/Parameters.cpp
     Source/Arpeggiator.cpp
     Source/FxChain.cpp
-    Source/SynthVoice.cpp
+    Source/Voice.cpp
     Source/Wavetable.cpp
     Source/WavetableImport.cpp
     Source/LookAndFeel.cpp
