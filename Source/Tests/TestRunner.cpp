@@ -144,10 +144,10 @@ int main (int argc, char** argv)
 {
     // Initialise enough of JUCE for the message manager to exist (the
     // WavetableRetirementQueue constructs a juce::Timer that wants one).
-    // The tests never dispatch a message loop, so we don't need GUI
-    // initialisation - keeps the link line free of juce_gui_basics.
-    juce::initialiseJuce_NonGUI();
-    struct Shutdown { ~Shutdown() { juce::shutdownJuce_NonGUI(); } } shutdownGuard;
+    // JUCE 8 only ships initialiseJuce_GUI / shutdownJuce_GUI; the call
+    // just spins up the MessageManager singleton and doesn't actually
+    // require any GUI modules to be linked or used.
+    const juce::ScopedJuceInitialiser_GUI juceInitialiser;
 
     juce::String filter;
     bool listOnly = false;

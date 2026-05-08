@@ -18,6 +18,7 @@
 //   * Output is finite, bounded and non-silent on a known patch
 #include "TestRunner.h"
 #include "TestSupport.h"
+#include "../SynthVoice.h"
 
 using namespace VKTest;
 
