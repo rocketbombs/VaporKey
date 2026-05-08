@@ -279,6 +279,24 @@ private:
     int    arpCurrentChan   = 1;           // channel of currently sounding note
     juce::Random arpRng;
 
+    // Pre-allocated scratch buffers for processArpeggiator / filterMidi so the
+    // audio thread never hits malloc. capacity is reserved once in
+    // prepareToPlay; clearQuick / MidiBuffer::clear keep it.
+    juce::MidiBuffer                  arpPassBuf;
+    juce::Array<juce::MidiMessage>    arpNoteEventsBuf;
+    juce::Array<int>                  arpNoteSamplesBuf;
+    juce::Array<ArpHeldNote>          arpActiveBuf;
+    juce::Array<ArpHeldNote>          arpOrderedBuf;
+    juce::MidiBuffer                  monoFilterBuf;
+
+    // Cached EQ coefficient inputs so we only rebuild the IIR coefficients
+    // when something actually changes (the JUCE make* helpers allocate a
+    // ReferenceCountedObject every call - lethal on the audio thread).
+    float  prevEqLowG  = 1.0e9f;  // sentinel: forces first build
+    float  prevEqMidG  = 1.0e9f;
+    float  prevEqMidF  = 1.0e9f;
+    float  prevEqHighG = 1.0e9f;
+
     // Custom wavetable file paths (kept in apvts state for persistence).
     juce::String customWavPath[3];
 

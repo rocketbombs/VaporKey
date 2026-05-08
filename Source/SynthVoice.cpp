@@ -1,7 +1,14 @@
 #include "SynthVoice.h"
 #include "PluginProcessor.h"
 
-WTVoice::WTVoice (SynthParams& p) : params (p) {}
+WTVoice::WTVoice (SynthParams& p) : params (p)
+{
+    // Default-constructed juce::Random uses seed = 1 for every voice in every
+    // plugin instance. Without this, all 16 voices fire identical noise / grit
+    // / drift jitter and stack coherently (16x amplitude, hard-edged, sounds
+    // aliased) instead of decorrelating into a smooth stochastic signal.
+    rng.setSeedRandomly();
+}
 
 void WTVoice::prepare (double sampleRate)
 {
@@ -85,8 +92,9 @@ void WTVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound*, 
         osc[i].driftPhase = rng.nextFloat();
     }
     subPhase = 0.0f;
-    for (auto& v : pinkB) v = 0.0f;
-    brownState = 0.0f;
+    for (auto& v : pinkBL) v = 0.0f;
+    for (auto& v : pinkBR) v = 0.0f;
+    brownStateL = brownStateR = 0.0f;
 
     filterL.reset(); filterR.reset();
 }
@@ -175,6 +183,8 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
     struct OP {
         bool on; int shape; float pos; float lin; float panL, panR;
         float ratio; int unison; float det;
+        float invSqrtU;
+        std::array<float, 7> uPanL, uPanR;
         const Wavetable* table;
     };
     // Resolve per-osc wavetable pointer once per block. Custom shapes use the
@@ -207,6 +217,19 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
         op[i].unison = juce::jlimit (1, 7, (int) params.osc[i].unison->load());
         const float detv = juce::jlimit (0.0f, 1.0f, params.osc[i].detune->load() + modOffset (params, ModDest::Osc1Det + i, 1.0f));
         op[i].det    = detv * 0.04f;
+
+        // Pre-compute equal-power pan + detune ratios for each unison voice
+        // once per block instead of recomputing trig per sample inside the
+        // inner unison loop (the hottest path in the synth).
+        op[i].invSqrtU = 1.0f / std::sqrt ((float) op[i].unison);
+        for (int u = 0; u < op[i].unison; ++u)
+        {
+            const float voiceN = (op[i].unison == 1) ? 0.0f
+                : ((float) u / (float) (op[i].unison - 1) - 0.5f) * 2.0f;
+            const float pp = (voiceN + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
+            op[i].uPanL[(size_t) u] = std::cos (pp);
+            op[i].uPanR[(size_t) u] = std::sin (pp);
+        }
     }
 
     const bool subOn = *params.subOn > 0.5f;
@@ -313,23 +336,18 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
                 while (osc[i].uPhases[(size_t) u] <  0.0f) osc[i].uPhases[(size_t) u] += 1.0f;
 
                 const float v = wt.sample (pos, osc[i].uPhases[(size_t) u], mip);
-
-                const float pan = (U == 1) ? 0.0f : voiceN;
-                const float pl = std::cos ((pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi);
-                const float pr = std::sin ((pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi);
-                oL += v * pl;
-                oR += v * pr;
+                oL += v * op[i].uPanL[(size_t) u];
+                oR += v * op[i].uPanR[(size_t) u];
             }
 
-            const float invU = 1.0f / std::sqrt ((float) U);
-            sumL += oL * invU * op[i].lin * op[i].panL;
-            sumR += oR * invU * op[i].lin * op[i].panR;
+            sumL += oL * op[i].invSqrtU * op[i].lin * op[i].panL;
+            sumR += oR * op[i].invSqrtU * op[i].lin * op[i].panR;
         }
 
         // Sub osc
         if (subOn)
         {
-            const float octFactor = subOct >= 0 ? std::pow (2.0f, (float) subOct) : std::pow (2.0f, (float) subOct);
+            const float octFactor = std::pow (2.0f, (float) subOct);
             const float subHz = baseFreqCurrent * pBendFactor * pitchEnvFactor * octFactor;
             const float inc = subHz / (float) sr;
             subPhase += inc;
@@ -345,38 +363,61 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
             sumL += v * g; sumR += v * g;
         }
 
-        // Noise osc
+        // Noise osc - independent L/R chains keep the spectral character
+        // (pink/brown) on both channels while still being decorrelated, instead
+        // of the previous mono-pink + raw-white mix that injected high-frequency
+        // hiss only on the right channel and read as aliasing.
         if (noiseOn)
         {
-            float white = rng.nextFloat() * 2.0f - 1.0f;
-            float n = white;
+            const float wL = rng.nextFloat() * 2.0f - 1.0f;
+            const float wR = rng.nextFloat() * 2.0f - 1.0f;
+            float nL = wL, nR = wR;
+
             if (noiseColor == NoiseColor::Pink)
             {
-                // Voss-McCartney approximation
-                pinkB[0] = 0.99886f * pinkB[0] + white * 0.0555179f;
-                pinkB[1] = 0.99332f * pinkB[1] + white * 0.0750759f;
-                pinkB[2] = 0.96900f * pinkB[2] + white * 0.1538520f;
-                pinkB[3] = 0.86650f * pinkB[3] + white * 0.3104856f;
-                pinkB[4] = 0.55000f * pinkB[4] + white * 0.5329522f;
-                pinkB[5] = -0.7616f * pinkB[5] - white * 0.0168980f;
-                n = pinkB[0]+pinkB[1]+pinkB[2]+pinkB[3]+pinkB[4]+pinkB[5]+pinkB[6]+white*0.5362f;
-                pinkB[6] = white * 0.115926f;
-                n *= 0.11f;
+                auto pinkStep = [] (float* b, float w) -> float
+                {
+                    // Voss-McCartney approximation.
+                    b[0] = 0.99886f * b[0] + w * 0.0555179f;
+                    b[1] = 0.99332f * b[1] + w * 0.0750759f;
+                    b[2] = 0.96900f * b[2] + w * 0.1538520f;
+                    b[3] = 0.86650f * b[3] + w * 0.3104856f;
+                    b[4] = 0.55000f * b[4] + w * 0.5329522f;
+                    b[5] = -0.7616f * b[5] - w * 0.0168980f;
+                    const float out = b[0]+b[1]+b[2]+b[3]+b[4]+b[5]+b[6]+w*0.5362f;
+                    b[6] = w * 0.115926f;
+                    return out * 0.11f;
+                };
+                nL = pinkStep (pinkBL, wL);
+                nR = pinkStep (pinkBR, wR);
             }
             else if (noiseColor == NoiseColor::Brown)
             {
-                brownState = juce::jlimit (-1.0f, 1.0f, brownState + white * 0.02f);
-                n = brownState * 3.5f;
+                // Leaky integrator (Brownian motion + slow self-discharge) -
+                // the previous random-walk-with-hard-clip drifted to the
+                // rails and produced DC offset and clicks. The 0.999 leak
+                // keeps DC bounded; the gain is calibrated so peak ~= 1.0.
+                brownStateL = brownStateL * 0.999f + wL * 0.02f;
+                brownStateR = brownStateR * 0.999f + wR * 0.02f;
+                nL = brownStateL * 3.5f;
+                nR = brownStateR * 3.5f;
             }
-            sumL += n * noiseLin;
-            sumR += (n * 0.7f + (rng.nextFloat() * 2.0f - 1.0f) * 0.05f) * noiseLin;
+
+            sumL += nL * noiseLin;
+            sumR += nR * noiseLin;
         }
 
-        // Background "vibe" hiss
+        // Background "vibe" hiss - independent L/R samples and a per-voice
+        // RNG (decorrelated by setSeedRandomly above) so chords no longer
+        // produce a 16x-coherent hiss. The signal is shaped by the per-voice
+        // filter just below, so it inherits the patch's tonality.
         if (vibeAmt > 0.0f)
         {
-            const float n = (rng.nextFloat() - 0.5f) * vibeAmt * 0.05f;
-            sumL += n; sumR += n * 0.7f;
+            const float wL = (rng.nextFloat() - 0.5f) * 2.0f;
+            const float wR = (rng.nextFloat() - 0.5f) * 2.0f;
+            const float g = vibeAmt * 0.025f;
+            sumL += wL * g;
+            sumR += wR * g;
         }
 
         // Filter drive (pre-filter saturation)

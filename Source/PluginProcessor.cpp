@@ -181,6 +181,12 @@ VaporKeyAudioProcessor::VaporKeyAudioProcessor()
     cacheParams();
     WavetableLibrary::get();
 
+    // Decorrelate per-instance RNGs. Without this every plugin instance starts
+    // its arpeggiator (and below: each voice's noise/grit generator) with the
+    // same JUCE default seed, so multiple instances produce identical random
+    // streams - which sums coherently and sounds buzzy/aliased.
+    arpRng.setSeedRandomly();
+
     synth.addSound (new WTSound());
     for (int i = 0; i < 16; ++i)
         synth.addVoice (new WTVoice (synthParams));
@@ -302,6 +308,18 @@ void VaporKeyAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
 
     delaySmoothedL.reset (sampleRate, 0.05);
     delaySmoothedR.reset (sampleRate, 0.05);
+
+    // Reserve generous capacity once so the audio thread never reallocates
+    // these scratch buffers (the source of multi-instance host freezes).
+    arpPassBuf.ensureSize (8192);
+    monoFilterBuf.ensureSize (8192);
+    arpNoteEventsBuf.ensureStorageAllocated (256);
+    arpNoteSamplesBuf.ensureStorageAllocated (256);
+    arpActiveBuf.ensureStorageAllocated (32);
+    arpOrderedBuf.ensureStorageAllocated (32);
+
+    // Force EQ coefficients to be rebuilt on the first block at the new rate.
+    prevEqLowG = prevEqMidG = prevEqMidF = prevEqHighG = 1.0e9f;
 }
 
 bool VaporKeyAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -328,11 +346,14 @@ void VaporKeyAudioProcessor::processArpeggiator (juce::MidiBuffer& midi, int num
     const bool on    = *synthParams.arpOn > 0.5f;
     const bool latch = *synthParams.arpLatch > 0.5f;
 
-    // First, snapshot incoming events. We strip note-on/off (they belong to
-    // the arp), and pass through everything else (CC, pitch bend, AT).
-    juce::MidiBuffer pass;
-    juce::Array<juce::MidiMessage> noteEvents;
-    juce::Array<int>               noteSamples;
+    // Reuse pre-allocated scratch buffers so we never call malloc on the audio
+    // thread (multi-instance setups serialize on the heap lock and freeze).
+    auto& pass        = arpPassBuf;
+    auto& noteEvents  = arpNoteEventsBuf;
+    auto& noteSamples = arpNoteSamplesBuf;
+    pass.clear();
+    noteEvents.clearQuick();
+    noteSamples.clearQuick();
 
     for (const auto meta : midi)
     {
@@ -419,8 +440,11 @@ void VaporKeyAudioProcessor::processArpeggiator (juce::MidiBuffer& midi, int num
 
     auto pickStepNote = [&] (const juce::Array<ArpHeldNote>& source) -> ArpHeldNote
     {
-        // Sorted copy for ordered modes.
-        juce::Array<ArpHeldNote> ordered = source;
+        // Sorted copy for ordered modes - reuse a member buffer to avoid heap
+        // allocation every step boundary.
+        auto& ordered = arpOrderedBuf;
+        ordered.clearQuick();
+        ordered.addArray (source);
         std::sort (ordered.begin(), ordered.end(),
                    [] (const ArpHeldNote& a, const ArpHeldNote& b) { return a.note < b.note; });
 
@@ -492,8 +516,11 @@ void VaporKeyAudioProcessor::processArpeggiator (juce::MidiBuffer& midi, int num
             ++eventIdx;
         }
 
-        // Active source for picking: physical held + (optionally) latched extras.
-        juce::Array<ArpHeldNote> activeSource = arpHeld;
+        // Active source for picking: physical held + (optionally) latched
+        // extras. Reuse a member buffer so the inner loop allocates nothing.
+        auto& activeSource = arpActiveBuf;
+        activeSource.clearQuick();
+        activeSource.addArray (arpHeld);
         if (latch)
         {
             for (const auto& e : arpLatched)
@@ -576,7 +603,10 @@ void VaporKeyAudioProcessor::filterMidi (juce::MidiBuffer& midi)
     const bool legato   = *synthParams.legato > 0.5f;
     const float bendRange = synthParams.bendRange->load();
 
-    juce::MidiBuffer out;
+    // Reuse pre-allocated MidiBuffer (audio-thread allocation is what freezes
+    // hosts under heavy multi-instance loads).
+    auto& out = monoFilterBuf;
+    out.clear();
 
     for (const auto meta : midi)
     {
@@ -750,7 +780,9 @@ void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         }
     }
 
-    // EQ (3-band: low shelf, peak mid, high shelf)
+    // EQ (3-band: low shelf, peak mid, high shelf). The make* helpers each
+    // allocate a ReferenceCountedObject under the hood, so we only call them
+    // when an input parameter actually changes.
     {
         const float lowG  = *synthParams.eqLow;
         const float midG  = *synthParams.eqMid;
@@ -758,12 +790,26 @@ void VaporKeyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         const float highG = *synthParams.eqHigh;
         if (std::abs (lowG) + std::abs (midG) + std::abs (highG) > 0.05f)
         {
-            *eqLowL.coefficients = *juce::dsp::IIR::Coefficients<float>::makeLowShelf (sr, 200.0f, 0.707f, juce::Decibels::decibelsToGain (lowG));
-            *eqLowR.coefficients = *eqLowL.coefficients;
-            *eqMidL.coefficients = *juce::dsp::IIR::Coefficients<float>::makePeakFilter (sr, midF, 0.8f, juce::Decibels::decibelsToGain (midG));
-            *eqMidR.coefficients = *eqMidL.coefficients;
-            *eqHighL.coefficients = *juce::dsp::IIR::Coefficients<float>::makeHighShelf (sr, 5000.0f, 0.707f, juce::Decibels::decibelsToGain (highG));
-            *eqHighR.coefficients = *eqHighL.coefficients;
+            constexpr float kEqEps = 1.0e-6f;
+            if (std::abs (lowG - prevEqLowG) > kEqEps)
+            {
+                *eqLowL.coefficients = *juce::dsp::IIR::Coefficients<float>::makeLowShelf (sr, 200.0f, 0.707f, juce::Decibels::decibelsToGain (lowG));
+                *eqLowR.coefficients = *eqLowL.coefficients;
+                prevEqLowG = lowG;
+            }
+            if (std::abs (midG - prevEqMidG) > kEqEps || std::abs (midF - prevEqMidF) > kEqEps)
+            {
+                *eqMidL.coefficients = *juce::dsp::IIR::Coefficients<float>::makePeakFilter (sr, midF, 0.8f, juce::Decibels::decibelsToGain (midG));
+                *eqMidR.coefficients = *eqMidL.coefficients;
+                prevEqMidG = midG;
+                prevEqMidF = midF;
+            }
+            if (std::abs (highG - prevEqHighG) > kEqEps)
+            {
+                *eqHighL.coefficients = *juce::dsp::IIR::Coefficients<float>::makeHighShelf (sr, 5000.0f, 0.707f, juce::Decibels::decibelsToGain (highG));
+                *eqHighR.coefficients = *eqHighL.coefficients;
+                prevEqHighG = highG;
+            }
 
             for (int i = 0; i < n; ++i)
             {

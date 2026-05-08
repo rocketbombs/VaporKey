@@ -43,9 +43,13 @@ private:
     OscState osc[3];
     float subPhase = 0.0f;
 
-    // Pink/brown noise state
-    float pinkB[7] {};
-    float brownState = 0.0f;
+    // Pink/brown noise state - one chain per output channel so left and
+    // right are decorrelated without resorting to mixing in unfiltered
+    // (aliasing-prone) white noise on one side.
+    float pinkBL[7] {};
+    float pinkBR[7] {};
+    float brownStateL = 0.0f;
+    float brownStateR = 0.0f;
 
     // Envelopes
     juce::ADSR ampEnv;
