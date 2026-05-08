@@ -143,3 +143,49 @@ jobs:
           name: VaporKey-Linux-Standalone
           path: build/VaporKey_artefacts/Release/Standalone/VaporKey
           if-no-files-found: ignore
+
+  # On tag push (vX.Y.Z), bundle the per-OS artefacts into one zip per platform
+  # and create a draft GitHub release so the maintainer can review the auto-
+  # generated notes before publishing.
+  release:
+    name: Draft GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package per-platform zips
+        run: |
+          set -euo pipefail
+          ver="${GITHUB_REF_NAME#v}"
+          mkdir -p stage out
+          for d in artifacts/*/; do
+            name="$(basename "$d")"
+            case "$name" in
+              *Windows*) plat=Windows ;;
+              *macOS*)   plat=macOS ;;
+              *Linux*)   plat=Linux ;;
+              *)         continue ;;
+            esac
+            mkdir -p "stage/${plat}"
+            cp -R "${d}." "stage/${plat}/"
+          done
+          for plat in Windows macOS Linux; do
+            [ -d "stage/${plat}" ] || continue
+            (cd stage && zip -qr "../out/VaporKey-${ver}-${plat}.zip" "${plat}")
+          done
+          ls -la out
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.zip
+          draft: true
+          generate_release_notes: true
