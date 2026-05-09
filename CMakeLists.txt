@@ -12,6 +12,17 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # translation units don't get pulled into our stricter set.
 if(MSVC)
     add_compile_options(/MP)
+
+    # MSVC's whole-program optimiser (/GL + /LTCG, enabled by JUCE's
+    # juce_recommended_lto_flags) ICEs in p2\main.cpp during link-time
+    # codegen of WavetableLibrary's per-shape generators. The function
+    # bodies themselves are simple - it's the cumulative IL the back-end
+    # has to chew through for this one TU that trips it. Compiling
+    # Wavetable.cpp without /GL excludes it from LTCG; the file runs only
+    # at plugin load (factory wavetable construction), so losing LTO for
+    # it has no audible perf impact.
+    set_source_files_properties(Source/Wavetable.cpp PROPERTIES
+        COMPILE_OPTIONS "/GL-")
 endif()
 
 include(FetchContent)
