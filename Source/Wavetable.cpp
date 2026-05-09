@@ -135,6 +135,11 @@ const std::vector<WavetableLibrary::CategoryEntry>& WavetableLibrary::categories
     return entries;
 }
 
+// Each shape's per-frame generator lives as a free function below rather than
+// as an inline lambda inside the constructor. Keeping them separated dodges
+// an MSVC LTCG internal-compiler-error that triggers when the constructor
+// holds too many lambda bodies in one translation unit
+// (fatal error C1001 from p2\main.cpp during whole-program optimisation).
 namespace
 {
     using Buf  = std::array<float, Wavetable::kFrameSize>;
@@ -144,12 +149,9 @@ namespace
 
     // Lerp helper for frame interpolation across discrete vowel positions.
     inline float lerp (float a, float b, float t) noexcept { return a + (b - a) * t; }
-}
 
-WavetableLibrary::WavetableLibrary()
-{
     // Basic: sine -> triangle -> saw -> square as you sweep position.
-    tables[Basic].build ([](int f, Buf& b)
+    void buildBasic (int f, Buf& b)
     {
         const float pos = (float) f / (float) (kFrames - 1);
         for (int n = 0; n < kN; ++n)
@@ -165,10 +167,10 @@ WavetableLibrary::WavetableLibrary()
             else                   { float x = (pos - 0.666f) / 0.334f;  v = saw  * (1 - x) + sq  * x; }
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Saws: super-saw cluster widens with position.
-    tables[Saws].build ([](int f, Buf& b)
+    void buildSaws (int f, Buf& b)
     {
         const float spread = (float) f / (float) (kFrames - 1) * 0.04f;
         for (int n = 0; n < kN; ++n)
@@ -182,10 +184,10 @@ WavetableLibrary::WavetableLibrary()
             }
             b[(size_t) n] = v / 7.0f;
         }
-    });
+    }
 
     // Squares: square -> PWM toward narrow pulse.
-    tables[Squares].build ([](int f, Buf& b)
+    void buildSquares (int f, Buf& b)
     {
         const float duty = 0.5f - 0.4f * ((float) f / (float) (kFrames - 1));
         for (int n = 0; n < kN; ++n)
@@ -193,10 +195,10 @@ WavetableLibrary::WavetableLibrary()
             const float t = (float) n / (float) kN;
             b[(size_t) n] = (t < duty) ? 1.0f : -1.0f;
         }
-    });
+    }
 
     // Vocal: shifted-formant sweep (legacy timbre, kept for preset compat).
-    tables[Vocal].build ([](int f, Buf& b)
+    void buildVocal (int f, Buf& b)
     {
         const float shift = 1.0f + (float) f * 0.25f;
         const float formants[3] = { 1.0f * shift, 2.6f * shift, 4.1f * shift };
@@ -218,10 +220,10 @@ WavetableLibrary::WavetableLibrary()
             }
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Bell: inharmonic partials, decaying with frame.
-    tables[Bell].build ([](int f, Buf& b)
+    void buildBell (int f, Buf& b)
     {
         const float decay = 1.0f - 0.6f * ((float) f / (float) (kFrames - 1));
         const float ratios[6] = { 1.0f, 2.76f, 5.4f, 8.93f, 13.34f, 18.64f };
@@ -234,10 +236,10 @@ WavetableLibrary::WavetableLibrary()
                 v += amps[k] * std::pow (decay, (float) k) * std::sin (ratios[k] * t);
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Digital: single-modulator FM with growing index.
-    tables[Digital].build ([](int f, Buf& b)
+    void buildDigital (int f, Buf& b)
     {
         const float idx = 0.5f + 3.0f * ((float) f / (float) (kFrames - 1));
         const float ratio = 2.0f;
@@ -246,10 +248,10 @@ WavetableLibrary::WavetableLibrary()
             const float t = kTwoPi * (float) n / (float) kN;
             b[(size_t) n] = std::sin (t + idx * std::sin (ratio * t));
         }
-    });
+    }
 
     // Harmonic: tilt the harmonic series (-1 = dark, +1 = bright).
-    tables[Harmonic].build ([](int f, Buf& b)
+    void buildHarmonic (int f, Buf& b)
     {
         const float tilt = -1.0f + 2.0f * ((float) f / (float) (kFrames - 1));
         for (int n = 0; n < kN; ++n)
@@ -260,10 +262,10 @@ WavetableLibrary::WavetableLibrary()
                 v += std::pow ((float) k, tilt) / (float) k * std::sin (k * t);
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Glass: clustered partials.
-    tables[Glass].build ([](int f, Buf& b)
+    void buildGlass (int f, Buf& b)
     {
         const float spread = 1.0f + (float) f * 0.18f;
         const float partials[6] = { 1.0f, 1.5f * spread, 2.0f * spread, 3.5f, 5.5f, 8.0f };
@@ -276,10 +278,10 @@ WavetableLibrary::WavetableLibrary()
                 v += amps[k] * std::sin (partials[k] * t);
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Reso: emphasized formant near varying frequency.
-    tables[Reso].build ([](int f, Buf& b)
+    void buildReso (int f, Buf& b)
     {
         const float center = 3.0f + 12.0f * ((float) f / (float) (kFrames - 1));
         const float q = 1.5f;
@@ -295,21 +297,13 @@ WavetableLibrary::WavetableLibrary()
             }
             b[(size_t) n] = v;
         }
-    });
-
-    // tables[Custom] is intentionally left default-constructed (zeroed). The
-    // voice and display always special-case Custom to read from
-    // SynthParams::customTables[i] instead.
-
-    // ============================================================
-    //  v0.5 additions
-    // ============================================================
+    }
 
     // Sync: hard-sync sweep. A "slave" saw is reset every master cycle, but
     // its own internal frequency (the sync ratio) climbs with the position
     // parameter. Frame 0 = no sync (clean saw); frame 7 = ratio 4.5
     // (classic "pew" hard-sync timbre).
-    tables[Sync].build ([](int f, Buf& b)
+    void buildSync (int f, Buf& b)
     {
         const float ratio = 1.0f + 3.5f * ((float) f / (float) (kFrames - 1));
         for (int n = 0; n < kN; ++n)
@@ -318,12 +312,12 @@ WavetableLibrary::WavetableLibrary()
             const float slave  = std::fmod (master * ratio, 1.0f);
             b[(size_t) n] = 2.0f * slave - 1.0f;
         }
-    });
+    }
 
     // RingMod: product of two sines whose frequency ratio sweeps from 1 to
     // 7.5. Produces sum-and-difference partials around each harmonic - lots
     // of bell-like/metallic content without needing inharmonic ratios.
-    tables[RingMod].build ([](int f, Buf& b)
+    void buildRingMod (int f, Buf& b)
     {
         const float ratio = 1.0f + 6.5f * ((float) f / (float) (kFrames - 1));
         for (int n = 0; n < kN; ++n)
@@ -331,13 +325,13 @@ WavetableLibrary::WavetableLibrary()
             const float t = kTwoPi * (float) n / (float) kN;
             b[(size_t) n] = std::sin (t) * std::sin (ratio * t);
         }
-    });
+    }
 
     // Wavefold: sine through a triangle-style wavefolder of increasing drive.
     // Frame 0 = drive 1 (clean sine); frame 7 = drive ~5 (multiple folds,
     // very rich harmonic content). Uses a piecewise-linear fold rather than
     // the smoother sin-fold so the sound is bitey, not soft.
-    tables[Wavefold].build ([](int f, Buf& b)
+    void buildWavefold (int f, Buf& b)
     {
         const float drive = 1.0f + 4.0f * ((float) f / (float) (kFrames - 1));
         for (int n = 0; n < kN; ++n)
@@ -347,12 +341,12 @@ WavetableLibrary::WavetableLibrary()
             if (v < 0) v += 4.0f;
             b[(size_t) n] = std::abs (v - 2.0f) - 1.0f;
         }
-    });
+    }
 
     // Vowels: A -> E -> I -> O -> U morph using formant frequencies from
     // standard speech-research tables, normalised to a ~100 Hz fundamental
     // (i.e. formant 730 Hz becomes harmonic-index 7.3).
-    tables[Vowels].build ([](int f, Buf& b)
+    void buildVowels (int f, Buf& b)
     {
         // Vowel formant tables (F1, F2, F3 at f0=100Hz, expressed as
         // harmonic indices). Source: classic Peterson & Barney 1952
@@ -387,12 +381,12 @@ WavetableLibrary::WavetableLibrary()
             }
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Choir: lush mixed-formant timbre that gets brighter across frames.
     // Average of 'A' and 'O' formants (so it sits halfway between open and
     // round), and the upper harmonic count grows with position.
-    tables[Choir].build ([](int f, Buf& b)
+    void buildChoir (int f, Buf& b)
     {
         constexpr float fmt[3] = { 6.5f, 9.7f, 24.2f };
         constexpr float amp[3] = { 1.0f, 0.55f, 0.30f };
@@ -415,12 +409,12 @@ WavetableLibrary::WavetableLibrary()
             }
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Whisper: high-formant breathy timbre. Energy concentrated in the
     // 30-40th harmonic range. Lower harmonics are attenuated linearly so
     // the fundamental doesn't dominate.
-    tables[Whisper].build ([](int f, Buf& b)
+    void buildWhisper (int f, Buf& b)
     {
         const float center = 28.0f + 12.0f * ((float) f / (float) (kFrames - 1));
         const float q = 5.0f;
@@ -437,14 +431,14 @@ WavetableLibrary::WavetableLibrary()
             }
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Organ: Hammond-style drawbar additive. 9 drawbars at the canonical
     // ratios (sub-octave, sub-fifth, fundamental, octaves, harmonics).
     // Frame 0 = focused "8800 0000 0" (fundamental + 1st octave); frame 7
     // = full "8888 8888 8" (all drawbars open) for the classic full-organ
     // sound.
-    tables[Organ].build ([](int f, Buf& b)
+    void buildOrgan (int f, Buf& b)
     {
         constexpr float ratios[9]    = { 0.5f, 1.5f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 8.0f };
         constexpr float startAmps[9] = { 0.0f, 0.0f, 1.0f, 0.7f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
@@ -461,11 +455,11 @@ WavetableLibrary::WavetableLibrary()
             }
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Pluck: harmonic series with exponential decay, Karplus-Strong-ish.
     // Higher frame = less decay = brighter (more high-harmonic content).
-    tables[Pluck].build ([](int f, Buf& b)
+    void buildPluck (int f, Buf& b)
     {
         const float decay = 0.30f - 0.27f * ((float) f / (float) (kFrames - 1));
         for (int n = 0; n < kN; ++n)
@@ -476,13 +470,13 @@ WavetableLibrary::WavetableLibrary()
                 v += std::exp (-decay * (float) k) / (float) k * std::sin ((float) k * t);
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Sawteeth: odd-harmonic saw with a high-frequency rolloff. Sounds
     // like a "warm" or "padded" saw - the missing even harmonics give it
     // a hollow square-ish core, and the rolloff softens the top end.
     // Higher frame = less rolloff (brighter).
-    tables[Sawteeth].build ([](int f, Buf& b)
+    void buildSawteeth (int f, Buf& b)
     {
         const float rolloff = 0.06f - 0.055f * ((float) f / (float) (kFrames - 1));
         for (int n = 0; n < kN; ++n)
@@ -493,12 +487,12 @@ WavetableLibrary::WavetableLibrary()
                 v += std::exp (-rolloff * (float) k) / (float) k * std::sin ((float) k * t);
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Even/Odd: morphs the balance between odd-only and even-only harmonics.
     // Frame 0 = pure odd harmonics (square-flavoured); frame 7 = pure even
     // (sounds an octave higher). The middle frames have both, like a saw.
-    tables[EvenOdd].build ([](int f, Buf& b)
+    void buildEvenOdd (int f, Buf& b)
     {
         const float oddW  = 1.0f - (float) f / (float) (kFrames - 1);
         const float evenW =        (float) f / (float) (kFrames - 1);
@@ -513,12 +507,12 @@ WavetableLibrary::WavetableLibrary()
             }
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Tine: electric piano (Rhodes-like). Slightly inharmonic ratios with
     // a strong "clang" partial that decays away across frames. Frame 0 =
     // bright tine attack; frame 7 = mellow body without the clang.
-    tables[Tine].build ([](int f, Buf& b)
+    void buildTine (int f, Buf& b)
     {
         constexpr float ratios[5]   = { 1.0f, 2.005f, 3.07f, 6.0f, 12.0f };
         constexpr float ampsBright[5] = { 1.0f, 0.40f, 0.55f, 0.70f, 0.40f };
@@ -535,12 +529,12 @@ WavetableLibrary::WavetableLibrary()
             }
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // Mallet: tuned percussion (vibraphone/marimba). Square-plate vibration
     // mode ratios. The fundamental is constant; the upper modes grow with
     // the brightness frame parameter.
-    tables[Mallet].build ([](int f, Buf& b)
+    void buildMallet (int f, Buf& b)
     {
         constexpr float ratios[4] = { 1.0f, 4.0f, 9.4f, 17.5f };
         const float bright = (float) f / (float) (kFrames - 1);
@@ -555,12 +549,12 @@ WavetableLibrary::WavetableLibrary()
                 v += amps[k] * std::sin (ratios[k] * t);
             b[(size_t) n] = v;
         }
-    });
+    }
 
     // FM Stack: 3-operator stacked FM. carrier is modulated by op1, which is
     // itself modulated by op2. Frame 0 = mild (low indices); frame 7 =
     // chaotic (high indices, very rich harmonic content).
-    tables[FMStack].build ([](int f, Buf& b)
+    void buildFMStack (int f, Buf& b)
     {
         const float pos  = (float) f / (float) (kFrames - 1);
         const float idx1 = 1.0f + 4.0f * pos;
@@ -574,12 +568,12 @@ WavetableLibrary::WavetableLibrary()
             const float mod    = std::sin (r1 * t + subMod);
             b[(size_t) n] = std::sin (t + idx1 * mod);
         }
-    });
+    }
 
     // Bitcrush: sine quantised to a sweepable bit depth. Frame 0 = ~12 bits
     // (essentially clean); frame 7 = ~3 bits (heavy stair-step quantisation
     // with a buzzy harmonic pattern).
-    tables[Bitcrush].build ([](int f, Buf& b)
+    void buildBitcrush (int f, Buf& b)
     {
         const float pos = (float) f / (float) (kFrames - 1);
         const float bits = 12.0f - 9.0f * pos;
@@ -589,5 +583,37 @@ WavetableLibrary::WavetableLibrary()
             const float s = std::sin (kTwoPi * (float) n / (float) kN);
             b[(size_t) n] = std::round (s * steps) / steps;
         }
-    });
+    }
+}
+
+WavetableLibrary::WavetableLibrary()
+{
+    tables[Basic]   .build (buildBasic);
+    tables[Saws]    .build (buildSaws);
+    tables[Squares] .build (buildSquares);
+    tables[Vocal]   .build (buildVocal);
+    tables[Bell]    .build (buildBell);
+    tables[Digital] .build (buildDigital);
+    tables[Harmonic].build (buildHarmonic);
+    tables[Glass]   .build (buildGlass);
+    tables[Reso]    .build (buildReso);
+
+    // tables[Custom] is intentionally left default-constructed (zeroed). The
+    // voice and display always special-case Custom to read from
+    // SynthParams::customTables[i] instead.
+
+    tables[Sync]    .build (buildSync);
+    tables[RingMod] .build (buildRingMod);
+    tables[Wavefold].build (buildWavefold);
+    tables[Vowels]  .build (buildVowels);
+    tables[Choir]   .build (buildChoir);
+    tables[Whisper] .build (buildWhisper);
+    tables[Organ]   .build (buildOrgan);
+    tables[Pluck]   .build (buildPluck);
+    tables[Sawteeth].build (buildSawteeth);
+    tables[EvenOdd] .build (buildEvenOdd);
+    tables[Tine]    .build (buildTine);
+    tables[Mallet]  .build (buildMallet);
+    tables[FMStack] .build (buildFMStack);
+    tables[Bitcrush].build (buildBitcrush);
 }
