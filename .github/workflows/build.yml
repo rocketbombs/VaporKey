@@ -94,8 +94,11 @@ jobs:
         run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
+        # VaporKey_All builds both VST3 and Standalone (the artefacts this job
+        # uploads). Targeting it explicitly avoids rebuilding VaporKeyTests and
+        # VaporKeyPresetLint here - those already ran on Linux.
         shell: cmd
-        run: cmake --build build --config Release --target VaporKey_VST3 --parallel
+        run: cmake --build build --config Release --target VaporKey_All --parallel
 
       - name: Locate VST3
         id: locate
@@ -105,6 +108,14 @@ jobs:
           if (-not $vst3) { throw "VST3 not found" }
           echo "Found: $($vst3.FullName)"
           echo "VST3_PATH=$($vst3.FullName)" >> $env:GITHUB_ENV
+
+      - name: Locate Standalone
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse -Path build -Filter "VaporKey.exe" | Where-Object { $_.FullName -match "Standalone" } | Select-Object -First 1
+          if (-not $exe) { throw "Standalone exe not found" }
+          echo "Found: $($exe.FullName)"
+          echo "STANDALONE_PATH=$($exe.FullName)" >> $env:GITHUB_ENV
 
       - name: Validate with pluginval
         shell: pwsh
@@ -122,12 +133,12 @@ jobs:
           name: VaporKey-Windows-VST3
           path: ${{ env.VST3_PATH }}
 
-      - name: Upload Standalone (optional)
+      - name: Upload Standalone
         uses: actions/upload-artifact@v4
         with:
           name: VaporKey-Windows-Standalone
-          path: build/VaporKey_artefacts/Release/Standalone/*.exe
-          if-no-files-found: ignore
+          path: ${{ env.STANDALONE_PATH }}
+          if-no-files-found: error
 
   macos:
     name: Build (macOS VST3)
@@ -140,7 +151,10 @@ jobs:
         run: cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        # VaporKey_All builds both VST3 and Standalone (the artefacts this job
+        # uploads). Targeting it explicitly avoids rebuilding VaporKeyTests and
+        # VaporKeyPresetLint here - those already ran on Linux.
+        run: cmake --build build --config Release --target VaporKey_All --parallel
 
       - name: Validate with pluginval
         run: |
@@ -164,7 +178,7 @@ jobs:
         with:
           name: VaporKey-macOS-Standalone
           path: build/VaporKey_artefacts/Release/Standalone/VaporKey.app
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   linux:
     name: Build (Linux VST3)
@@ -218,7 +232,7 @@ jobs:
         with:
           name: VaporKey-Linux-Standalone
           path: build/VaporKey_artefacts/Release/Standalone/VaporKey
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   # On tag push (vX.Y.Z), bundle the per-OS artefacts into one zip per platform
   # and create a draft GitHub release so the maintainer can review the auto-
