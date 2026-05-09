@@ -61,6 +61,7 @@ target_sources(VaporKey PRIVATE
     Source/PresetStore.cpp
     Source/WavetableImport.cpp
     Source/Wavetable.cpp
+    Source/WavetableShapes.cpp
     Source/LookAndFeel.cpp
     Source/Presets.cpp
     Source/Widgets/VaporWidgets.cpp
@@ -123,6 +124,7 @@ target_sources(VaporKeyPresetLint PRIVATE
     Source/PresetLint.cpp
     Source/Parameters.cpp
     Source/Wavetable.cpp
+    Source/WavetableShapes.cpp
 )
 
 target_compile_definitions(VaporKeyPresetLint PRIVATE
@@ -182,6 +184,7 @@ target_sources(VaporKeyTests PRIVATE
     Source/PresetStore.cpp
     Source/Presets.cpp
     Source/Wavetable.cpp
+    Source/WavetableShapes.cpp
     Source/WavetableImport.cpp
 )
 
