@@ -72,20 +72,75 @@ private:
 class WavetableLibrary
 {
 public:
+    // Shape enum. Indices 0..9 are FROZEN for preset compatibility with v0.4 -
+    // the factory preset bank stores them as ints, and any user state save also
+    // pickled the integer index. New shapes are appended past the 'Custom'
+    // sentinel, which still sits at 9.
+    //
     // 'Custom' selects a per-oscillator user-loaded wavetable owned by the
-    // processor. The library itself does not store a Custom table.
-    enum Shape { Basic = 0, Saws, Squares, Vocal, Bell, Digital, Harmonic, Glass, Reso, Custom, NumShapes };
+    // processor. The library itself does not store a Custom table - the slot
+    // at index 9 in 'tables' is left default-constructed and never read (the
+    // voice and the on-screen wavetable display both special-case Custom).
+    enum Shape : int
+    {
+        // ---- v0.4 indices, frozen ----
+        Basic    = 0,
+        Saws     = 1,
+        Squares  = 2,
+        Vocal    = 3,
+        Bell     = 4,
+        Digital  = 5,
+        Harmonic = 6,
+        Glass    = 7,
+        Reso     = 8,
+        Custom   = 9,
+
+        // ---- v0.5 additions (appended; indices stable from here on) ----
+        Sync     = 10,    // hard-sync sweep
+        RingMod  = 11,    // ring-modulated sine pair
+        Wavefold = 12,    // symmetric wavefolder
+        Vowels   = 13,    // A->E->I->O->U morph
+        Choir    = 14,    // mixed-formant ensemble
+        Whisper  = 15,    // high-formant breathy
+        Organ    = 16,    // Hammond drawbars
+        Pluck    = 17,    // exponentially-damped harmonics (Karplus/Strong-ish)
+        Sawteeth = 18,    // odd harmonics with high-freq rolloff
+        EvenOdd  = 19,    // even-vs-odd harmonic balance
+        Tine     = 20,    // electric piano (Rhodes-ish inharmonic)
+        Mallet   = 21,    // tuned percussion (vibraphone-ish)
+        FMStack  = 22,    // 3-operator stacked FM
+        Bitcrush = 23,    // sine quantised to fewer bits
+
+        NumShapes
+    };
+
+    // Visual grouping for the shape selector. Keep in sync with
+    // categoriesAndShapes() below.
+    enum Category : int { Analog = 0, VocalCat, HarmonicCat, Inharmonic, Digital_, Special, NumCategories };
+
+    struct CategoryEntry { Category category; juce::String name; juce::Array<int> shapes; };
+
+    // Returns the curated category->shapes grouping used by the OSC page's
+    // shape selector. Index order inside a category reflects the suggested
+    // browse order, NOT the enum order.
+    static const std::vector<CategoryEntry>& categoriesAndShapes();
 
     static WavetableLibrary& get();
 
     const Wavetable& getTable (int shape) const noexcept
     {
-        return tables[(size_t) juce::jlimit (0, (int) Custom - 1, shape)];
+        const int s = juce::jlimit (0, (int) NumShapes - 1, shape);
+        // Custom has no library entry - callers must special-case it. If we
+        // somehow get here with shape == Custom, fall back to Basic so we
+        // still produce audible output.
+        return tables[(size_t) (s == (int) Custom ? (int) Basic : s)];
     }
 
     static const char* shapeName (int shape) noexcept;
 
 private:
     WavetableLibrary();
-    std::array<Wavetable, (size_t) Custom> tables;
+    // Sized to NumShapes; the slot at index Custom (9) is intentionally
+    // unused (default-constructed, silent).
+    std::array<Wavetable, (size_t) NumShapes> tables;
 };
