@@ -91,9 +91,23 @@ private:
     bool  legatoSkipEnvRetrigger = false;
     bool  legatoArmed = false;  // see armLegatoTransition()
 
+    // Previous-sample state for first-order Antiderivative Anti-Aliasing
+    // (ADAA) on the two fastTanh saturation stages (filter drive + analog
+    // sat). Per-voice / per-channel: each voice runs its own saturator.
+    // Initial value 0 is fine - the first sample after a long silence is
+    // treated as a step from 0, which ADAA correctly bandlimits.
+    float adaaFiltDriveL = 0.0f, adaaFiltDriveR = 0.0f;
+    float adaaSatL       = 0.0f, adaaSatR       = 0.0f;
+
     juce::Random rng;
 
     static float nextLfo (int shape, float phase, float& shStateVal, float& shTimerVal,
                           float incPerSample, juce::Random& rng);
     static inline float fastTanh (float x) noexcept;
+    // Antiderivative F(x) of fastTanh. Constant of integration is
+    // irrelevant - ADAA only ever uses differences.
+    static inline float fastTanhAntideriv (float x) noexcept;
+    // First-order ADAA on fastTanh. `xPrev` is read AND written - the
+    // caller stores the per-voice state across samples.
+    static inline float fastTanhADAA (float x, float& xPrev) noexcept;
 };

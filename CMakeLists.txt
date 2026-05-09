@@ -57,6 +57,7 @@ target_sources(VaporKey PRIVATE
     Source/SynthVoice.cpp
     Source/Arpeggiator.cpp
     Source/FxChain.cpp
+    Source/PlateReverb.cpp
     Source/PresetStore.cpp
     Source/WavetableImport.cpp
     Source/Wavetable.cpp
@@ -175,6 +176,7 @@ target_sources(VaporKeyTests PRIVATE
     Source/SynthVoice.cpp
     Source/Arpeggiator.cpp
     Source/FxChain.cpp
+    Source/PlateReverb.cpp
     Source/PresetStore.cpp
     Source/Presets.cpp
     Source/Wavetable.cpp

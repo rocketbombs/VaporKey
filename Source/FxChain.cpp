@@ -44,7 +44,7 @@ void FxChain::prepare (double sampleRate, int samplesPerBlock)
     delayL.prepare (spec); delayL.setMaximumDelayInSamples ((int) (sampleRate * 2.0));
     delayR.prepare (spec); delayR.setMaximumDelayInSamples ((int) (sampleRate * 2.0));
     delayL.reset(); delayR.reset();
-    reverbFx.setSampleRate (sampleRate);
+    plate.prepare (sampleRate);
 
     juce::dsp::ProcessSpec mono { sampleRate, (juce::uint32) samplesPerBlock, 1 };
     eqLowL.prepare (mono); eqLowR.prepare (mono);
@@ -53,6 +53,21 @@ void FxChain::prepare (double sampleRate, int samplesPerBlock)
 
     delaySmoothedL.reset (sampleRate, 0.05);
     delaySmoothedR.reset (sampleRate, 0.05);
+
+    // 2-stage oversampler = 4x. Polyphase IIR halfband: zero reported
+    // latency, sub-sample group delay (good enough for distortion - we're
+    // shaping the harmonic content, the group-delay smear is way below
+    // any audible threshold). FIR equiripple would be linear-phase but
+    // would introduce a fixed sample latency we'd have to advertise to
+    // the host; the synth has no need for that.
+    distOversampler = std::make_unique<juce::dsp::Oversampling<float>> (
+        2,                                                             // channels
+        2,                                                             // factor: 2 stages = 4x
+        juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR,
+        true,                                                          // max quality
+        false);                                                        // useIntegerLatency
+    distOversampler->initProcessing ((size_t) samplesPerBlock);
+    distOversampler->reset();
 
     // Force EQ coefficients to be rebuilt on the first block at the new rate.
     prevEqLowG = prevEqMidG = prevEqMidF = prevEqHighG = 1.0e9f;
@@ -75,7 +90,8 @@ void FxChain::reset()
     eqLowL.reset();  eqLowR.reset();
     eqMidL.reset();  eqMidR.reset();
     eqHighL.reset(); eqHighR.reset();
-    reverbFx.reset();
+    plate.reset();
+    if (distOversampler) distOversampler->reset();
 }
 
 void FxChain::process (juce::AudioBuffer<float>& buffer, double currentBpm)
@@ -113,26 +129,50 @@ void FxChain::process (juce::AudioBuffer<float>& buffer, double currentBpm)
     processStereo (buffer, currentBpm);
 }
 
+void FxChain::processDistortionOversampled (juce::AudioBuffer<float>& buffer,
+                                            int type, float drive, float mix)
+{
+    // Hot loop runs at 4x sr inside the upsampled block: hard-clip / fold /
+    // bit-crush all generate broadband harmonics that would alias hard at
+    // base sr. Soft-clip aliases less but still benefits, and we keep the
+    // oversampler engaged unconditionally so the chain's phase response
+    // doesn't step when the user automates dist_mix.
+    juce::dsp::AudioBlock<float> block (buffer);
+    auto upBlock = distOversampler->processSamplesUp (block);
+
+    const int numCh = (int) upBlock.getNumChannels();
+    const int upN   = (int) upBlock.getNumSamples();
+    const float wet = mix;
+    const float dry = 1.0f - mix;
+
+    for (int ch = 0; ch < numCh; ++ch)
+    {
+        auto* p = upBlock.getChannelPointer ((size_t) ch);
+        for (int i = 0; i < upN; ++i)
+            p[i] = p[i] * dry + distort (p[i], type, drive) * wet;
+    }
+
+    distOversampler->processSamplesDown (block);
+}
+
 void FxChain::processStereo (juce::AudioBuffer<float>& buffer, double currentBpm)
 {
     auto* L = buffer.getWritePointer (0);
     auto* R = buffer.getWritePointer (1);
     const int n = buffer.getNumSamples();
 
-    // Distortion
+    // Distortion (4x oversampled). Bypassing the oversampler when distortion
+    // is off would make automating dist_mix audibly step the chain's phase
+    // response, so we always run through it; if mix * drive is effectively
+    // zero we just skip the distort() call and pay the (tiny) IIR halfband
+    // up/down cost.
     {
         const float dMix = *params.distMix;
         const float drv  = *params.distDrive;
         if (dMix > 0.001f && drv > 0.0001f)
         {
             const int type = (int) (params.distType->load() + 0.5f);
-            const float wet = dMix;
-            const float dry = 1.0f - dMix;
-            for (int i = 0; i < n; ++i)
-            {
-                L[i] = L[i] * dry + distort (L[i], type, drv) * wet;
-                R[i] = R[i] * dry + distort (R[i], type, drv) * wet;
-            }
+            processDistortionOversampled (buffer, type, drv, dMix);
         }
     }
 
@@ -239,19 +279,25 @@ void FxChain::processStereo (juce::AudioBuffer<float>& buffer, double currentBpm
         }
     }
 
-    // Reverb
+    // Reverb (Dattorro plate). The plate runs sample-by-sample because the
+    // tank's cross-coupled feedback is per-sample - the previous juce::Reverb
+    // ran a block-at-a-time but inside it does the same per-sample work, so
+    // the wall-clock cost is similar.
     {
         const float rMix = *params.reverb;
         if (rMix > 0.001f)
         {
-            juce::Reverb::Parameters rp;
-            rp.roomSize = juce::jlimit (0.0f, 1.0f, params.reverbSize->load());
-            rp.damping  = juce::jlimit (0.0f, 1.0f, params.reverbDamp->load());
-            rp.wetLevel = rMix * 0.5f;
-            rp.dryLevel = 1.0f;
-            rp.width    = 1.0f;
-            reverbFx.setParameters (rp);
-            reverbFx.processStereo (L, R, n);
+            plate.setSize    (juce::jlimit (0.0f, 1.0f, params.reverbSize->load()));
+            plate.setDamping (juce::jlimit (0.0f, 1.0f, params.reverbDamp->load()));
+
+            const float wet = rMix;
+            for (int i = 0; i < n; ++i)
+            {
+                float wL, wR;
+                plate.process (L[i], R[i], wL, wR);
+                L[i] += wL * wet;
+                R[i] += wR * wet;
+            }
         }
     }
 

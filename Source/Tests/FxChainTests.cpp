@@ -197,6 +197,100 @@ VK_TEST (FxChain_ReverbProducesTail)
     VK_EXPECT (sawTail);
 }
 
+VK_TEST (FxChain_PlateReverbStereoIsDecorrelated)
+{
+    // The plate's figure-eight tank reads the two output channels from
+    // different points in the tank delays, so an impulse should produce
+    // L != R after the reverb. A plain mono-fed FreeVerb (the previous
+    // implementation) used identical paths for L and R modulo a width
+    // setting and could fail this with width=0; the Dattorro plate has
+    // structural decorrelation built in.
+    FxHarness h;
+    setParameter (h.tp, "gain",        0.0f);
+    setParameter (h.tp, "width",       1.0f);
+    setParameter (h.tp, "reverb",      1.0f);
+    setParameter (h.tp, "reverb_size", 0.7f);
+    setParameter (h.tp, "reverb_damp", 0.0f);
+
+    juce::AudioBuffer<float> impulse (2, kBlock);
+    impulse.clear();
+    impulse.setSample (0, 0, 1.0f);
+    impulse.setSample (1, 0, 1.0f);
+    h.fx.process (impulse, 120.0);
+
+    juce::AudioBuffer<float> tail (2, kBlock * 4);
+    tail.clear();
+    for (int b = 0; b < 4; ++b)
+    {
+        juce::AudioBuffer<float> blk (2, kBlock);
+        blk.clear();
+        h.fx.process (blk, 120.0);
+        for (int ch = 0; ch < 2; ++ch)
+            tail.copyFrom (ch, b * kBlock, blk, ch, 0, kBlock);
+    }
+
+    const float* L = tail.getReadPointer (0);
+    const float* R = tail.getReadPointer (1);
+    double diffSq = 0.0, sumSq = 0.0;
+    for (int i = 0; i < tail.getNumSamples(); ++i)
+    {
+        diffSq += (double) (L[i] - R[i]) * (L[i] - R[i]);
+        sumSq  += (double) L[i] * L[i] + (double) R[i] * R[i];
+    }
+    // L and R should differ noticeably across the tail. Threshold is
+    // generous - we just want to assert the channels aren't identical.
+    VK_EXPECT_GT (diffSq, sumSq * 0.05);
+}
+
+VK_TEST (FxChain_PlateReverbDampingShortensTail)
+{
+    // Heavy damping should attenuate the late tail compared to no damping.
+    // Damping operates inside the tank loop, so we need to wait for the
+    // signal to circulate many times before the difference is audible:
+    // tank period ~= 275 ms at this sample rate, so we measure the tail
+    // from ~0.5 s onwards over ~1 s.
+    auto rmsLateTail = [] (float damp01)
+    {
+        FxHarness h;
+        setParameter (h.tp, "gain",        0.0f);
+        setParameter (h.tp, "reverb",      1.0f);
+        setParameter (h.tp, "reverb_size", 0.9f);
+        setParameter (h.tp, "reverb_damp", damp01);
+
+        juce::AudioBuffer<float> impulse (2, kBlock);
+        impulse.clear();
+        impulse.setSample (0, 0, 1.0f);
+        impulse.setSample (1, 0, 1.0f);
+        h.fx.process (impulse, 120.0);
+
+        const int blocksToSkip    = (int) std::ceil (0.5 * kSR / kBlock);
+        const int blocksToMeasure = (int) std::ceil (1.0 * kSR / kBlock);
+
+        for (int b = 0; b < blocksToSkip; ++b)
+        {
+            juce::AudioBuffer<float> blk (2, kBlock);
+            blk.clear();
+            h.fx.process (blk, 120.0);
+        }
+
+        juce::AudioBuffer<float> late (2, kBlock * blocksToMeasure);
+        late.clear();
+        for (int b = 0; b < blocksToMeasure; ++b)
+        {
+            juce::AudioBuffer<float> blk (2, kBlock);
+            blk.clear();
+            h.fx.process (blk, 120.0);
+            for (int ch = 0; ch < 2; ++ch)
+                late.copyFrom (ch, b * kBlock, blk, ch, 0, kBlock);
+        }
+        return analyse (late).rms;
+    };
+
+    const float bright = rmsLateTail (0.0f);
+    const float dark   = rmsLateTail (0.95f);
+    VK_EXPECT_GT (bright, dark * 1.5f);
+}
+
 VK_TEST (FxChain_CompressorReducesHotSignal)
 {
     // Without compressor: sine at full scale stays at full scale (modulo
