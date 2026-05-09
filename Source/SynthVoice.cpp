@@ -29,6 +29,46 @@ inline float WTVoice::fastTanh (float x) noexcept
     return x * (27.0f + x2) / (27.0f + 9.0f * x2);
 }
 
+// Antiderivative of fastTanh:
+//   f(x) = x*(27 + x^2)/(27 + 9*x^2) = 24x/(27 + 9x^2) + x/9
+//   F(x) = (4/3) * ln(27 + 9*x^2) + x^2/18
+// Constant of integration omitted (ADAA only uses F(a) - F(b)).
+inline float WTVoice::fastTanhAntideriv (float x) noexcept
+{
+    const float x2 = x * x;
+    return x2 * (1.0f / 18.0f)
+         + (4.0f / 3.0f) * std::log (27.0f + 9.0f * x2);
+}
+
+// First-order Antiderivative Anti-Aliasing (Bilbao / Parker / Esqueda) for
+// fastTanh. With a smooth nonlinearity f(x) and antiderivative F(x):
+//   y[n] = (F(x[n]) - F(x[n-1])) / (x[n] - x[n-1])
+// gives the average of f over the input interval, which is the
+// continuous-time bandlimited output if x is treated as a piecewise-linear
+// reconstruction. Per-sample cost: one log + a handful of FLOPs (vs. the
+// MAD-only fastTanh) - cheap enough to run at the per-voice sample rate.
+//
+// When |x[n] - x[n-1]| is below epsilon the formula is 0/0; we fall back
+// to f((x[n] + x[n-1]) / 2), the analytical limit (L'Hopital).
+inline float WTVoice::fastTanhADAA (float x, float& xPrev) noexcept
+{
+    constexpr float kEps = 1.0e-5f;
+    const float dx = x - xPrev;
+    float y;
+    if (std::abs (dx) > kEps)
+    {
+        y = (fastTanhAntideriv (x) - fastTanhAntideriv (xPrev)) / dx;
+    }
+    else
+    {
+        const float xm  = 0.5f * (x + xPrev);
+        const float xm2 = xm * xm;
+        y = xm * (27.0f + xm2) / (27.0f + 9.0f * xm2);
+    }
+    xPrev = x;
+    return y;
+}
+
 float WTVoice::nextLfo (int shape, float phase, float& shStateVal, float& shTimerVal,
                         float incPerSample, juce::Random& rng)
 {
@@ -431,24 +471,31 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
             sumR += wR * g;
         }
 
-        // Filter drive (pre-filter saturation)
+        // Filter drive (pre-filter saturation). ADAA-anti-aliased: the
+        // tanh-shaped clipper generates harmonics that would otherwise
+        // alias hard at modest drive levels with anything brighter than a
+        // sine.
         if (fDrive > 0.0f)
         {
-            const float d = 1.0f + fDrive * 5.0f;
-            sumL = fastTanh (sumL * d) / std::sqrt (d);
-            sumR = fastTanh (sumR * d) / std::sqrt (d);
+            const float d         = 1.0f + fDrive * 5.0f;
+            const float invSqrtD  = 1.0f / std::sqrt (d);
+            sumL = fastTanhADAA (sumL * d, adaaFiltDriveL) * invSqrtD;
+            sumR = fastTanhADAA (sumR * d, adaaFiltDriveR) * invSqrtD;
         }
 
         // Filter
         sumL = filterL.processSample (0, sumL);
         sumR = filterR.processSample (0, sumR);
 
-        // Saturation (analog warmth)
+        // Saturation (analog warmth). Same ADAA treatment as the filter
+        // drive - the post-filter signal has already been (mostly) tamed,
+        // but heavy sat values still benefit.
         if (satAmt > 0.0f)
         {
-            const float drive = 1.0f + satAmt * 4.0f;
-            sumL = fastTanh (sumL * drive) / drive * (1.0f + satAmt * 0.5f);
-            sumR = fastTanh (sumR * drive) / drive * (1.0f + satAmt * 0.5f);
+            const float drive   = 1.0f + satAmt * 4.0f;
+            const float scaleOut = (1.0f + satAmt * 0.5f) / drive;
+            sumL = fastTanhADAA (sumL * drive, adaaSatL) * scaleOut;
+            sumR = fastTanhADAA (sumR * drive, adaaSatR) * scaleOut;
         }
 
         const float g = ampE * ampVelGain;

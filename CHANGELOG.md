@@ -7,6 +7,29 @@ versions may break parameter or preset compatibility.
 ## [Unreleased]
 
 ### Added
+- **Dattorro plate reverb.** Replaces JUCE's FreeVerb with a 1997 Dattorro
+  topology (input bandwidth filter → 4-stage diffuser cascade → figure-eight
+  tank with cross-coupled half-paths, modulated all-passes for flutter-echo
+  break-up, damping low-pass, and seven-tap stereo output read from the
+  tank's interior). Denser, smoother tail; structural stereo de-correlation
+  with no width control needed. The `reverb_size` and `reverb_damp`
+  parameters now drive the tank's decay coefficient and damping LP cutoff
+  respectively - same parameter ids and ranges, so existing presets keep
+  working.
+- **4× oversampled distortion.** The FX chain's distortion stage (soft / hard
+  / fold / bit) now runs through a 4× polyphase-IIR halfband oversampler
+  (zero-latency, sub-sample group delay). Hard-clip and wavefolder generate
+  broadband harmonics that previously aliased hard back into the audible
+  range; oversampling pushes the alias band beyond Nyquist before the
+  decimation filter pulls it back down. CPU cost is incurred only when
+  distortion is engaged.
+- **Antiderivative anti-aliased per-voice saturation.** The pre-filter drive
+  and post-filter analog saturation in `WTVoice` now use first-order ADAA
+  on `fastTanh`. Per-sample cost is one log + a handful of FLOPs - cheap
+  enough to keep all 16 voices in budget without resorting to per-voice
+  oversampling. The technique replaces `f(x[n])` with the average of `f`
+  over the input interval, which is exactly the bandlimited continuous-time
+  output for a piecewise-linear input reconstruction.
 - **Validation suite (`VaporKeyTests`).** New CMake target builds a single
   console runner that exercises the synth engine, arpeggiator, FX chain,
   wavetable mip-mapping, .wav import, parameter registry, factory presets,
