@@ -59,6 +59,13 @@ private:
     OscState osc[3];
     float subPhase = 0.0f;
 
+    // Per-osc previous-sample mono output (pre-pan, pre-level) used as the
+    // modulator signal for cross-osc FM/RM/AM. The 1-sample latency keeps the
+    // render loop a single forward pass without dependency-ordering between
+    // oscillators - cheaper than a two-pass scheme and inaudible at audio
+    // modulator rates (~20 us at 48 kHz).
+    float oscModPrev[3] {};
+
     // Pink/brown noise state - one chain per output channel so left and
     // right are decorrelated without resorting to mixing in unfiltered
     // (aliasing-prone) white noise on one side.

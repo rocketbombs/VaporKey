@@ -34,6 +34,22 @@ namespace LfoShape { enum { Sine = 0, Tri, SawUp, SawDown, Square, SH, NumShapes
     inline juce::StringArray names() { return { "Sine", "Tri", "Saw+", "Saw-", "Square", "S&H" }; }
 }
 
+// Cross-oscillator modulation source selector. Indices map to:
+//   Off = 0, Osc1 = 1, Osc2 = 2, Osc3 = 3.
+// A destination set to its own source index is silently ignored (treated as
+// Off) - no self-modulation, no feedback.
+namespace OscModSrc { enum { Off = 0, Osc1, Osc2, Osc3, NumSrcs };
+    inline juce::StringArray names() { return { "Off", "Osc 1", "Osc 2", "Osc 3" }; }
+}
+
+// Cross-oscillator modulation type. FM = phase modulation (DX-style: the
+// modulator value offsets the carrier's sample point each frame). Ring =
+// classic ring modulation (carrier * modulator). AM = unipolar amplitude
+// modulation (carrier scaled by 0..1 envelope from modulator).
+namespace OscModType { enum { FM = 0, Ring, AM, NumTypes };
+    inline juce::StringArray names() { return { "FM", "Ring", "AM" }; }
+}
+
 namespace SubShape { enum { Sine = 0, Square, Tri, NumShapes };
     inline juce::StringArray names() { return { "Sine", "Square", "Tri" }; }
 }
@@ -78,6 +94,13 @@ struct SynthParams
         std::atomic<float>* unison{};
         std::atomic<float>* detune{};
         std::atomic<float>* phase{}; // start phase 0..1, -1 = free
+
+        // Cross-oscillator modulation: this oscillator (the destination) is
+        // modulated by another osc's previous-sample output. Routing is
+        // per-destination; multiple destinations can share the same source.
+        std::atomic<float>* modSrc{};   // OscModSrc enum index
+        std::atomic<float>* modType{};  // OscModType enum index
+        std::atomic<float>* modAmt{};   // 0..1 depth
     };
     OscP osc[3];
 

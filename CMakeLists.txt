@@ -68,6 +68,7 @@ target_sources(VaporKey PRIVATE
     Source/Widgets/EqCurve.cpp
     Source/Widgets/WavetableDisplay.cpp
     Source/Widgets/WavetableShapePicker.cpp
+    Source/Widgets/OscModMatrix.cpp
     Source/Pages/OscPage.cpp
     Source/Pages/FilterEnvPage.cpp
     Source/Pages/ModPage.cpp

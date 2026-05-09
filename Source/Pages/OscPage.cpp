@@ -44,14 +44,30 @@ OscPage::OscPage (VaporKeyAudioProcessor& p) : proc (p)
     mono       = std::make_unique<VaporToggle>(proc.apvts, "mono", "MONO");                             addAndMakeVisible (*mono);
     legato     = std::make_unique<VaporToggle>(proc.apvts, "legato", "LEGATO");                         addAndMakeVisible (*legato);
     bendRange  = std::make_unique<VaporKnob>  (proc.apvts, "bend_range", "Bend");                       addAndMakeVisible (*bendRange);
+
+    xmod = std::make_unique<OscModMatrix> (proc.apvts);
+    addAndMakeVisible (*xmod);
 }
+
+// Pixel-band heights for the three horizontal regions. X-MOD takes a fixed-ish
+// slice in the middle so the diagram never collapses to the point where it
+// reads as visual noise.
+namespace { constexpr int kXmodBandH = 140; constexpr int kBandPad = 8; }
 
 void OscPage::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().reduced (10);
-    auto top = r.removeFromTop ((int) (r.getHeight() * 0.62));
-    r.removeFromTop (10);
-    auto bottom = r;
+    const int total = r.getHeight();
+    // Bottom (sub/noise/voicing) takes ~32% of the page; X-MOD a fixed band;
+    // OSC panels use whatever remains.
+    const int bottomH = juce::jmax (110, (int) (total * 0.32f));
+    const int topH    = juce::jmax (180, total - bottomH - kXmodBandH - kBandPad * 2);
+
+    auto top      = r.removeFromTop (topH);
+    r.removeFromTop (kBandPad);
+    auto xmodR    = r.removeFromTop (kXmodBandH);
+    r.removeFromTop (kBandPad);
+    auto bottom   = r;
 
     const int oscW = (top.getWidth() - 20) / 3;
     for (int i = 0; i < 3; ++i)
@@ -59,6 +75,8 @@ void OscPage::paint (juce::Graphics& g)
         juce::Rectangle<int> panel (top.getX() + i * (oscW + 10), top.getY(), oscW, top.getHeight());
         drawSectionBg (g, panel, Colors::neonPink, "");
     }
+
+    drawSectionBg (g, xmodR, Colors::neonPurple, "X-MOD");
 
     const int bw = bottom.getWidth();
     juce::Rectangle<int> sub  (bottom.getX(),                  bottom.getY(), bw / 3 - 6, bottom.getHeight());
@@ -72,9 +90,25 @@ void OscPage::paint (juce::Graphics& g)
 void OscPage::resized()
 {
     auto r = getLocalBounds().reduced (10);
-    auto top = r.removeFromTop ((int) (r.getHeight() * 0.62));
-    r.removeFromTop (10);
+    const int total = r.getHeight();
+    const int bottomH = juce::jmax (110, (int) (total * 0.32f));
+    const int topH    = juce::jmax (180, total - bottomH - kXmodBandH - kBandPad * 2);
+
+    auto top    = r.removeFromTop (topH);
+    r.removeFromTop (kBandPad);
+    auto xmodR  = r.removeFromTop (kXmodBandH);
+    r.removeFromTop (kBandPad);
     auto bottom = r;
+
+    if (xmod)
+    {
+        // Slot the matrix below the X-MOD section title strip drawn by
+        // drawSectionBg, with the same inset as the bottom panels.
+        auto xmodInner = xmodR;
+        xmodInner.removeFromTop (kSectionTitleH);
+        xmodInner.reduce (10, 4);
+        xmod->setBounds (xmodInner);
+    }
 
     const int oscW = (top.getWidth() - 20) / 3;
     for (int i = 0; i < 3; ++i)

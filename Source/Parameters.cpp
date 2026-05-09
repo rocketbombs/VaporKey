@@ -42,6 +42,8 @@ namespace
         jassert (NoiseColor::names().size() == NoiseColor::NumColors);
         jassert (DistType::names().size()   == DistType::NumTypes);
         jassert (ArpMode::names().size()    == ArpMode::NumModes);
+        jassert (OscModSrc::names().size()  == OscModSrc::NumSrcs);
+        jassert (OscModType::names().size() == OscModType::NumTypes);
 
         std::vector<Entry> r;
         r.reserve (160);
@@ -123,6 +125,16 @@ namespace
                   [i] (SynthParams& sp) -> auto& { return sp.osc[i].detune; });
             addF (idp + "phase",  lbl + "Phase",    { -1.0f, 1.0f }, -1.0f,
                   [i] (SynthParams& sp) -> auto& { return sp.osc[i].phase; });
+
+            // Cross-oscillator modulation routing (defaults to Off so existing
+            // presets keep behaving identically until the user dials something
+            // in).
+            addC (idp + "mod_src",  lbl + "Mod Src",  OscModSrc::names(),  0,
+                  [i] (SynthParams& sp) -> auto& { return sp.osc[i].modSrc; });
+            addC (idp + "mod_type", lbl + "Mod Type", OscModType::names(), 0,
+                  [i] (SynthParams& sp) -> auto& { return sp.osc[i].modType; });
+            addF (idp + "mod_amt",  lbl + "Mod Amt",  { 0.0f, 1.0f }, 0.0f,
+                  [i] (SynthParams& sp) -> auto& { return sp.osc[i].modAmt; });
         }
 
         // Sub
