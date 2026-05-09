@@ -417,3 +417,98 @@ VK_TEST (SynthEngine_AllNotesOffSilencesActiveVoices)
         if (h.engine.synth().getVoice (i)->isVoiceActive()) ++activeAfter;
     VK_EXPECT_LT (activeAfter, activeBefore);
 }
+
+// Cross-osc modulation: with a non-trivial routing (osc 1 phase-modulated by
+// osc 2, osc 1 ring-modulated by osc 3 chained on top would conflict, so we
+// keep one route active and verify the audio remains finite, bounded, and
+// audibly different from the unrouted patch.
+namespace
+{
+    juce::AudioBuffer<float> renderHeldNote (EngineHarness& h, int note, int blocks)
+    {
+        juce::AudioBuffer<float> total (2, kBlock * blocks);
+        total.clear();
+        for (int b = 0; b < blocks; ++b)
+        {
+            juce::MidiBuffer m;
+            if (b == 0) m.addEvent (Midi::noteOn (note, 100), 0);
+            auto out = h.step (m, kBlock);
+            for (int ch = 0; ch < 2; ++ch)
+                total.copyFrom (ch, b * kBlock, out, ch, 0, kBlock);
+        }
+        return total;
+    }
+}
+
+VK_TEST (SynthEngine_CrossOscFMRendersFiniteAudibleAndDifferent)
+{
+    // Baseline: enable osc 2 alongside osc 1 with no cross-mod.
+    EngineHarness h;
+    setParameter (h.tp, "osc2_on", 1.0f);
+    auto baseline = renderHeldNote (h, 60, 8);
+    const auto bStats = analyse (baseline);
+    VK_EXPECT (! bStats.hasNaN);
+    VK_EXPECT (! bStats.hasInf);
+    VK_EXPECT_GT (bStats.peakAbs, 0.001f);
+
+    // Modulated: osc 1 is FM'd by osc 2 at a strong depth.
+    EngineHarness h2;
+    setParameter (h2.tp, "osc2_on",       1.0f);
+    setParameter (h2.tp, "osc1_mod_src",  (float) OscModSrc::Osc2);
+    setParameter (h2.tp, "osc1_mod_type", (float) OscModType::FM);
+    setParameter (h2.tp, "osc1_mod_amt",  0.8f);
+    auto modulated = renderHeldNote (h2, 60, 8);
+    const auto mStats = analyse (modulated);
+    VK_EXPECT (! mStats.hasNaN);
+    VK_EXPECT (! mStats.hasInf);
+    VK_EXPECT_LT (mStats.peakAbs, 4.0f);    // bounded - no runaway feedback
+    VK_EXPECT_GT (mStats.peakAbs, 0.001f);  // still audible
+
+    // The modulated render should differ from the baseline by a margin well
+    // outside numerical noise. We compare RMS rather than peak because peak
+    // can land on either side of bypass depending on phase alignment.
+    const float diff = std::abs (mStats.rms - bStats.rms);
+    VK_EXPECT_GT (diff, 1.0e-4f);
+}
+
+VK_TEST (SynthEngine_CrossOscRingModRendersFinite)
+{
+    EngineHarness h;
+    setParameter (h.tp, "osc2_on",       1.0f);
+    setParameter (h.tp, "osc1_mod_src",  (float) OscModSrc::Osc2);
+    setParameter (h.tp, "osc1_mod_type", (float) OscModType::Ring);
+    setParameter (h.tp, "osc1_mod_amt",  1.0f);
+
+    auto buf = renderHeldNote (h, 60, 8);
+    const auto stats = analyse (buf);
+    VK_EXPECT (! stats.hasNaN);
+    VK_EXPECT (! stats.hasInf);
+    VK_EXPECT_LT (stats.peakAbs, 4.0f);
+    VK_EXPECT_GT (stats.peakAbs, 0.001f);
+}
+
+VK_TEST (SynthEngine_CrossOscSelfRoutingIsBypass)
+{
+    // Routing osc N to its own modulator slot must be silently ignored - we
+    // use the 1-sample-delayed source value for cross-mod, and a self-route
+    // would create a feedback loop. The processor-side guard is that op[i]
+    // skips activation when modSrc == i; this test pins that behaviour.
+    EngineHarness baseline;
+    auto bRef = renderHeldNote (baseline, 60, 6);
+    const auto bs = analyse (bRef);
+
+    EngineHarness selfRouted;
+    setParameter (selfRouted.tp, "osc1_mod_src",  (float) OscModSrc::Osc1);
+    setParameter (selfRouted.tp, "osc1_mod_type", (float) OscModType::FM);
+    setParameter (selfRouted.tp, "osc1_mod_amt",  1.0f);
+    auto sRef = renderHeldNote (selfRouted, 60, 6);
+    const auto ss = analyse (sRef);
+
+    VK_EXPECT (! ss.hasNaN);
+    VK_EXPECT (! ss.hasInf);
+    // RMS should match within numerical tolerance: the self-route is treated
+    // as Off, so output is bit-identical to the baseline modulo voice RNG
+    // (the seeded grit / noise paths run regardless of cross-mod, so we
+    // allow a small RMS delta).
+    VK_EXPECT_NEAR (ss.rms, bs.rms, juce::jmax (1.0e-4f, bs.rms * 0.05f));
+}

@@ -146,6 +146,8 @@ void WTVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound*, 
         for (auto& v : pinkBR) v = 0.0f;
         brownStateL = brownStateR = 0.0f;
 
+        for (auto& v : oscModPrev) v = 0.0f;
+
         filterL.reset(); filterR.reset();
     }
 }
@@ -237,6 +239,15 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
         float invSqrtU;
         std::array<float, 7> uPanL, uPanR;
         const Wavetable* table;
+
+        // Cross-modulation routing, resolved once per block. modSrc < 0 means
+        // no modulation (off, or self-routed - which we silently ignore to
+        // prevent feedback). For FM, modAmt is pre-scaled to a phase-offset
+        // depth in cycles. For Ring/AM, it's the dry/wet mix amount.
+        int   modSrc = -1;
+        int   modType = OscModType::FM;
+        float modAmt = 0.0f;
+        float fmDepth = 0.0f;     // phase-offset cycles when modType == FM
     };
     // Resolve per-osc wavetable pointer once per block. Custom shapes use the
     // processor-owned shared_ptr (loaded atomically); fall back to Basic when
@@ -280,6 +291,22 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
             const float pp = (voiceN + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
             op[i].uPanL[(size_t) u] = std::cos (pp);
             op[i].uPanR[(size_t) u] = std::sin (pp);
+        }
+
+        // Resolve cross-modulation routing. The source enum is offset by 1
+        // (Off = 0, Osc1 = 1...), so subtract 1 to get a 0-based osc index.
+        // Self-routing is treated as Off to avoid 1-sample feedback loops.
+        const int rawSrc = rawChoice (params.osc[i].modSrc);
+        if (rawSrc > 0 && (rawSrc - 1) != i)
+        {
+            op[i].modSrc  = rawSrc - 1;
+            op[i].modType = rawChoice (params.osc[i].modType);
+            op[i].modAmt  = juce::jlimit (0.0f, 1.0f, params.osc[i].modAmt->load());
+            // FM depth: max ±2 cycles of phase offset at full amount. That's
+            // generous enough for chunky DX-style FM without being so deep
+            // that the wavetable mip choice (computed from the carrier rate)
+            // becomes wildly wrong.
+            op[i].fmDepth = op[i].modAmt * 2.0f;
         }
     }
 
@@ -355,6 +382,13 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
 
         float sumL = 0.0f, sumR = 0.0f;
 
+        // Latched per-osc mono output for THIS sample, captured pre-level /
+        // pre-pan so cross-modulation depth doesn't depend on the source's
+        // mix gain or stereo placement. Written here, propagated into
+        // oscModPrev at the bottom of the sample loop so the next sample's
+        // destinations can read it.
+        float oscModNow[3] { 0.0f, 0.0f, 0.0f };
+
         for (int i = 0; i < 3; ++i)
         {
             if (! op[i].on) continue;
@@ -370,9 +404,28 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
             const int U = op[i].unison;
             const float spread = op[i].det;
             float oL = 0.0f, oR = 0.0f;
+            float oM = 0.0f;   // mono unison sum, used as modulator source
 
-            // Pre-pick mip from base hz to avoid per-sample mip changes mid-block
-            const int mip = Wavetable::chooseMip (baseHz / (float) sr);
+            // Pre-pick mip from base hz to avoid per-sample mip changes mid-block.
+            // For FM we bump the mip up by an octave or two depending on depth -
+            // FM sidebands extend the carrier's spectrum, and sampling from a
+            // mip chosen for the base rate alone would alias hard. The bump
+            // costs a touch of brightness in exchange for clean output across
+            // the full modulation range.
+            int mip = Wavetable::chooseMip (baseHz / (float) sr);
+
+            // Cross-osc modulation inputs (1-sample-delayed source value).
+            const bool  hasFM    = (op[i].modSrc >= 0) && (op[i].modType == OscModType::FM);
+            const float modVal   = (op[i].modSrc >= 0) ? oscModPrev[op[i].modSrc] : 0.0f;
+            const float fmOffset = hasFM ? modVal * op[i].fmDepth : 0.0f;
+            if (hasFM)
+            {
+                // One octave for any FM, two at full depth (when sidebands
+                // extend furthest). Anything finer-grained gets lost in the
+                // 10-tap mip ladder.
+                const int bump = (op[i].modAmt >= 0.7f) ? 2 : 1;
+                mip = juce::jmin (Wavetable::kNumMips - 1, mip + bump);
+            }
 
             for (int u = 0; u < U; ++u)
             {
@@ -386,14 +439,54 @@ void WTVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer, int start
                 while (osc[i].uPhases[(size_t) u] >= 1.0f) osc[i].uPhases[(size_t) u] -= 1.0f;
                 while (osc[i].uPhases[(size_t) u] <  0.0f) osc[i].uPhases[(size_t) u] += 1.0f;
 
-                const float v = wt.sample (pos, osc[i].uPhases[(size_t) u], mip);
+                // For FM, sample the wavetable at phase + modulator offset.
+                // The accumulator itself only advances at the carrier rate -
+                // PM-style, which is mathematically equivalent to FM for
+                // band-limited modulators and lets us keep a stable phase
+                // baseline across blocks.
+                float ph = osc[i].uPhases[(size_t) u];
+                if (hasFM)
+                {
+                    ph += fmOffset;
+                    ph -= std::floor (ph);
+                }
+
+                const float v = wt.sample (pos, ph, mip);
+                oM += v;
                 oL += v * op[i].uPanL[(size_t) u];
                 oR += v * op[i].uPanR[(size_t) u];
             }
 
-            sumL += oL * op[i].invSqrtU * op[i].lin * op[i].panL;
-            sumR += oR * op[i].invSqrtU * op[i].lin * op[i].panR;
+            const float invU = op[i].invSqrtU;
+            float oscL = oL * invU * op[i].lin;
+            float oscR = oR * invU * op[i].lin;
+
+            // Ring / AM are post-mix multiplicative effects on the carrier.
+            //   Ring: classic four-quadrant multiply; mix = dry + amt * (dry*mod - dry).
+            //   AM:   unipolar modulator (mod*0.5 + 0.5) shaping the carrier
+            //         amplitude, mixed against dry by amt.
+            // Both collapse to the dry signal at amt = 0, so a non-zero
+            // modSrc with amt = 0 still sounds identical to bypass.
+            if (op[i].modSrc >= 0 && op[i].modType != OscModType::FM)
+            {
+                const float wetGain = (op[i].modType == OscModType::Ring)
+                                          ? modVal
+                                          : (modVal * 0.5f + 0.5f);
+                const float scale = 1.0f + op[i].modAmt * (wetGain - 1.0f);
+                oscL *= scale;
+                oscR *= scale;
+            }
+
+            sumL += oscL * op[i].panL;
+            sumR += oscR * op[i].panR;
+
+            // Mono unison sum, normalized like the L/R contributions, makes
+            // a clean modulator signal in roughly [-1, +1] regardless of
+            // the source osc's level and pan.
+            oscModNow[i] = oM * invU;
         }
+
+        for (int i = 0; i < 3; ++i) oscModPrev[i] = oscModNow[i];
 
         // Sub osc
         if (subOn)

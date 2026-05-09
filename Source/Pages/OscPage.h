@@ -3,6 +3,7 @@
 #include "../Widgets/VaporWidgets.h"
 #include "../Widgets/WavetableDisplay.h"
 #include "../Widgets/WavetableShapePicker.h"
+#include "../Widgets/OscModMatrix.h"
 
 class VaporKeyAudioProcessor;
 
@@ -28,6 +29,8 @@ private:
 
     std::unique_ptr<VaporKnob>   glide, bendRange;
     std::unique_ptr<VaporToggle> mono, legato;
+
+    std::unique_ptr<OscModMatrix> xmod;
 
     VaporKeyAudioProcessor& proc;
 };
