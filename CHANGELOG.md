@@ -7,6 +7,25 @@ versions may break parameter or preset compatibility.
 ## [Unreleased]
 
 ### Added
+- **14 new factory wavetables.** The Basic / Saws / Squares / Vocal / Bell /
+  Digital / Harmonic / Glass / Reso bank grew to 23 shapes:
+  *Sync* (hard-sync sweep), *RingMod* (sine-product), *Wavefold* (symmetric
+  triangle wavefolder), *Vowels* (A/E/I/O/U formant morph using Peterson &
+  Barney 1952 formant tables), *Choir* (mixed-formant ensemble), *Whisper*
+  (high-formant breathy), *Organ* (Hammond-style 9-drawbar additive),
+  *Pluck* (Karplus-Strong-flavoured exponentially-damped harmonics),
+  *Sawteeth* (odd-harmonic saw with rolloff), *Even/Odd* (even-vs-odd
+  balance morph), *Tine* (Rhodes-style inharmonic clang), *Mallet*
+  (vibraphone-mode partials), *FM Stack* (3-operator stacked FM),
+  *Bitcrush* (sweepable-bit-depth quantised sine). The legacy 0..9 indices
+  are frozen, so every existing preset still loads with the same timbre.
+- **Categorised wavetable selector.** The OSC page's shape combo is now a
+  custom multi-column popup grouped by Analog / Vocal / Harmonic /
+  Inharmonic / Digital / Special, so the 23-shape bank fits in one
+  scroll-free view with related timbres sitting next to each other. The
+  selector also surfaces the active category as a small caption inside
+  the picker so the current sound's family is visible without opening
+  the menu.
 - **Dattorro plate reverb.** Replaces JUCE's FreeVerb with a 1997 Dattorro
   topology (input bandwidth filter → 4-stage diffuser cascade → figure-eight
   tank with cross-coupled half-paths, modulated all-passes for flutter-echo

@@ -10,7 +10,10 @@
     "  values   - object of paramID -> value (any param not listed keeps its default)",
     "",
     "Wavetable shape indices for osc<n>_shape:",
-    "  0 Basic, 1 Saws, 2 Squares, 3 Vocal, 4 Bell, 5 Digital, 6 Harmonic, 7 Glass, 8 Reso"
+    "  0 Basic, 1 Saws, 2 Squares, 3 Vocal, 4 Bell, 5 Digital, 6 Harmonic, 7 Glass, 8 Reso, 9 Custom (per-osc user .wav)",
+    "  10 Sync, 11 RingMod, 12 Wavefold, 13 Vowels, 14 Choir, 15 Whisper,",
+    "  16 Organ, 17 Pluck, 18 Sawteeth, 19 Even/Odd, 20 Tine, 21 Mallet,",
+    "  22 FM Stack, 23 Bitcrush"
   ],
   "categories": ["Bass", "Lead", "Pad", "Pluck", "Keys", "Bell", "FX", "Arp"],
   "presets": [

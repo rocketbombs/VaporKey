@@ -8,9 +8,6 @@ using namespace VKEditorLayout;
 
 OscPage::OscPage (VaporKeyAudioProcessor& p) : proc (p)
 {
-    juce::StringArray shapes;
-    for (int i = 0; i < WavetableLibrary::NumShapes; ++i) shapes.add (WavetableLibrary::shapeName (i));
-
     for (int i = 0; i < 3; ++i)
     {
         auto& u = oscUI[i];
@@ -22,7 +19,7 @@ OscPage::OscPage (VaporKeyAudioProcessor& p) : proc (p)
 
         const juce::String pf = "osc" + juce::String (i + 1) + "_";
         u.on    = std::make_unique<VaporToggle> (proc.apvts, pf + "on", "ON");      addAndMakeVisible (*u.on);
-        u.shape = std::make_unique<VaporCombo>  (proc.apvts, pf + "shape", "Shape", shapes); addAndMakeVisible (*u.shape);
+        u.shape = std::make_unique<WavetableShapePicker> (proc.apvts, pf + "shape"); addAndMakeVisible (*u.shape);
         u.display = std::make_unique<WavetableDisplay> (proc, i); addAndMakeVisible (*u.display);
         u.position = std::make_unique<VaporKnob> (proc.apvts, pf + "pos",    "Pos");  addAndMakeVisible (*u.position);
         u.level    = std::make_unique<VaporKnob> (proc.apvts, pf + "level",  "Lvl");  addAndMakeVisible (*u.level);

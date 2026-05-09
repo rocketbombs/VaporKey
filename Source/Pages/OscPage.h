@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "../Widgets/VaporWidgets.h"
 #include "../Widgets/WavetableDisplay.h"
+#include "../Widgets/WavetableShapePicker.h"
 
 class VaporKeyAudioProcessor;
 
@@ -14,7 +15,7 @@ public:
 private:
     struct OscUI {
         std::unique_ptr<VaporToggle> on;
-        std::unique_ptr<VaporCombo>  shape;
+        std::unique_ptr<WavetableShapePicker> shape;
         std::unique_ptr<WavetableDisplay> display;
         std::unique_ptr<VaporKnob> position, level, pan, coarse, fine, unison, detune, phase;
         juce::Label title;

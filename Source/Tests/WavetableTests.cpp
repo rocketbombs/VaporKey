@@ -1,4 +1,4 @@
-// Wavetable tests - both the 9 factory wavetables built by WavetableLibrary
+// Wavetable tests - all factory wavetables built by WavetableLibrary
 // and the buildFromMonoAudio path used by the .wav importer. The mip-mapping
 // is the most subtle bit: voices read mips at run time, the wrong mip
 // produces audible aliasing or overly dull output.
@@ -62,10 +62,11 @@ VK_TEST (Wavetable_LibrarySingletonStable)
     auto& b = WavetableLibrary::get();
     VK_EXPECT (&a == &b);
 
-    // Every factory shape should resolve to a real table without falling off
-    // the Custom enum.
-    for (int s = 0; s < WavetableLibrary::Custom; ++s)
+    // Every factory shape should resolve to a real table. Custom is special-
+    // cased everywhere (per-oscillator user table), so skip it here.
+    for (int s = 0; s < WavetableLibrary::NumShapes; ++s)
     {
+        if (s == WavetableLibrary::Custom) continue;
         const Wavetable& wt = a.getTable (s);
         const float v = wt.sample (0.0f, 0.25f, 0);
         VK_EXPECT (! std::isnan (v));
@@ -76,8 +77,9 @@ VK_TEST (Wavetable_LibrarySingletonStable)
 VK_TEST (Wavetable_FactoryShapesProduceAudibleOutput)
 {
     auto& lib = WavetableLibrary::get();
-    for (int s = 0; s < WavetableLibrary::Custom; ++s)
+    for (int s = 0; s < WavetableLibrary::NumShapes; ++s)
     {
+        if (s == WavetableLibrary::Custom) continue;
         const Wavetable& wt = lib.getTable (s);
         const float r0 = rmsOfFrame (wt, 0.0f, 0);
         const float r1 = rmsOfFrame (wt, 1.0f, 0);
@@ -94,8 +96,9 @@ VK_TEST (Wavetable_FactoryShapesAreBounded)
 {
     auto& lib = WavetableLibrary::get();
     constexpr int N = 256;
-    for (int s = 0; s < WavetableLibrary::Custom; ++s)
+    for (int s = 0; s < WavetableLibrary::NumShapes; ++s)
     {
+        if (s == WavetableLibrary::Custom) continue;
         const Wavetable& wt = lib.getTable (s);
         for (int frame = 0; frame < Wavetable::kNumFrames; ++frame)
         {
@@ -114,6 +117,46 @@ VK_TEST (Wavetable_FactoryShapesAreBounded)
                 if (! (std::abs (v) <= 1.05f)) break;
             }
         }
+    }
+}
+
+VK_TEST (Wavetable_AllShapesHaveDistinctNames)
+{
+    juce::StringArray names;
+    for (int s = 0; s < WavetableLibrary::NumShapes; ++s)
+    {
+        const juce::String name = WavetableLibrary::shapeName (s);
+        VK_EXPECT_MSG (name.isNotEmpty(),
+            juce::String ("shape ") + juce::String (s) + " has empty name");
+        VK_EXPECT_MSG (name != "?",
+            juce::String ("shape ") + juce::String (s) + " has placeholder name");
+        VK_EXPECT_MSG (! names.contains (name),
+            juce::String ("duplicate shape name: ") + name);
+        names.add (name);
+    }
+}
+
+VK_TEST (Wavetable_CategoriesCoverEveryShape)
+{
+    // Every non-? shape (including Custom) should appear in exactly one
+    // category in categoriesAndShapes(). Otherwise the OSC page selector
+    // can either miss shapes (silently unreachable) or list one twice.
+    const auto& cats = WavetableLibrary::categoriesAndShapes();
+    juce::Array<int> seen;
+    for (const auto& cat : cats)
+        for (int s : cat.shapes)
+        {
+            VK_EXPECT_MSG (! seen.contains (s),
+                juce::String ("shape ") + WavetableLibrary::shapeName (s)
+                    + " appears in more than one category");
+            seen.add (s);
+        }
+
+    for (int s = 0; s < WavetableLibrary::NumShapes; ++s)
+    {
+        VK_EXPECT_MSG (seen.contains (s),
+            juce::String ("shape ") + WavetableLibrary::shapeName (s)
+                + " (index " + juce::String (s) + ") missing from categoriesAndShapes()");
     }
 }
 
