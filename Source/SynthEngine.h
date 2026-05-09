@@ -34,7 +34,11 @@ public:
 private:
     void filterMidi (juce::MidiBuffer& midi);
     void updateMacroSums();
-    void markVoicesLegato();
+
+    // Hand off the currently-sounding voice to the next noteOn so the
+    // mono-legato transition glides on the same voice (envelopes, phases,
+    // and filter state preserved). Returns true if a voice was handed off.
+    bool prepareLegatoTransition();
 
     SynthParams& params;
     juce::Synthesiser synthesiser;

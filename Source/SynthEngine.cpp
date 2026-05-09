@@ -86,16 +86,21 @@ void SynthEngine::filterMidi (juce::MidiBuffer& midi)
             // letting the new note through. The synth then steals the freed
             // voice for the new note, so a single voice always carries the
             // melody.
+            //
+            // For legato we arm a hand-off on the active voice. When the
+            // synth processes the noteOff/noteOn pair below, the voice's
+            // stopNote consumes the arm flag - it clears its
+            // currentlyPlayingNote without releasing envelopes - and the
+            // following findFreeVoice picks that same voice up so the new
+            // startNote glides on preserved envelope / phase / filter
+            // state. Without it, JUCE routed the noteOn to whatever idle
+            // voice was first in line and the legato flag was wasted.
+            if (legato && ! monoHeldNotes.isEmpty())
+                prepareLegatoTransition();
+
             for (int n : monoHeldNotes)
                 if (n != msg.getNoteNumber())
                     out.addEvent (juce::MidiMessage::noteOff (msg.getChannel(), n), sample);
-
-            // Legato: ask the voice that's about to be (re)started to leave
-            // its envelopes alone. Together with last-note priority above and
-            // voice stealing on the synth, this glides the existing voice into
-            // the new pitch instead of re-attacking.
-            if (legato && ! monoHeldNotes.isEmpty())
-                markVoicesLegato();
 
             monoHeldNotes.removeAllInstancesOf (msg.getNoteNumber());
             monoHeldNotes.add (msg.getNoteNumber());
@@ -109,7 +114,10 @@ void SynthEngine::filterMidi (juce::MidiBuffer& midi)
             if (! monoHeldNotes.isEmpty())
             {
                 const int n = monoHeldNotes.getLast();
-                if (legato) markVoicesLegato();
+                // Same hand-off pattern as the noteOn branch: free the
+                // active voice ahead of the noteOff/noteOn pair so the
+                // re-trigger lands on it with the legato flag set.
+                if (legato) prepareLegatoTransition();
                 out.addEvent (msg, sample); // emit the off
                 out.addEvent (juce::MidiMessage::noteOn (msg.getChannel(), n, (juce::uint8) 100), sample);
                 continue;
@@ -121,17 +129,36 @@ void SynthEngine::filterMidi (juce::MidiBuffer& midi)
     midi.swapWith (out);
 }
 
-// Flag currently-playing voices as "next startNote is a legato transition -
-// keep envelopes running". The synth steals one of the active voices for the
-// new note; that voice consumes the flag inside startNote. We deliberately
-// skip idle voices so the flag can't leak across a mono->poly switch (idle
-// voices that get retriggered later would otherwise skip their attack).
-void SynthEngine::markVoicesLegato()
+// Arm a legato hand-off on the currently-sounding voice so that when the
+// synth processes the upcoming noteOff (which we emit alongside the new
+// noteOn at the same sample position), the voice clears its
+// currentlyPlayingNote without releasing envelopes - then findFreeVoice
+// picks up that same voice for the matching noteOn and the new startNote
+// glides on top of preserved state.
+//
+// We arm a flag rather than clearing currentlyPlayingNote synchronously
+// because synchronous clearing flips isVoiceActive() to false immediately;
+// any samples between block start and the noteOff position would then be
+// rendered silently (renderNextBlock early-returns when inactive),
+// producing an audible dropout at the legato transition point. Arming
+// defers the clear until the noteOff is actually delivered.
+//
+// Without this hand-off, JUCE's voice picker preferred any of the 15 idle
+// voices over the held voice (which is still in sustain) for the incoming
+// noteOn, so the new note re-attacked on a fresh voice - i.e. mono+legato
+// silently behaved like mono+retrigger.
+//
+// Returns true if a voice was found and armed.
+bool SynthEngine::prepareLegatoTransition()
 {
     for (int i = 0; i < synthesiser.getNumVoices(); ++i)
         if (auto* v = dynamic_cast<WTVoice*> (synthesiser.getVoice (i)))
             if (v->isVoiceActive())
-                v->setLegatoSkipEnvRetrigger (true);
+            {
+                v->armLegatoTransition();
+                return true;
+            }
+    return false;
 }
 
 void SynthEngine::updateMacroSums()

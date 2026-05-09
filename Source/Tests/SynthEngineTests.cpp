@@ -256,6 +256,92 @@ VK_TEST (SynthEngine_MonoNoteOffFallsBackToHeld)
     VK_EXPECT_EQ (sounding60, 1);
 }
 
+VK_TEST (SynthEngine_MonoLegatoTransitionUsesSameVoice)
+{
+    // Mono + Legato: pressing a second note while the first is held should
+    // glide on the SAME voice without re-attacking. Before the legato hand-off
+    // was wired up correctly, the noteOff for the held note pushed its voice
+    // into release while JUCE's findFreeVoice routed the new noteOn to a
+    // fresh idle voice - so two voices sounded (old in release, new in
+    // attack) and the legato-skip flag on the held voice was wasted.
+    EngineHarness h;
+    setParameter (h.tp, "mono",   1.0f);
+    setParameter (h.tp, "legato", 1.0f);
+    setParameter (h.tp, "a_a",    0.001f);  // settle into sustain quickly
+    setParameter (h.tp, "a_d",    0.001f);
+    setParameter (h.tp, "a_s",    1.0f);
+    setParameter (h.tp, "a_r",    0.5f);    // long enough that a stale
+                                            // release voice would still
+                                            // register as "active" below
+    setParameter (h.tp, "glide",  0.0f);    // no pitch-glide noise
+
+    // First note: voice X plays C4.
+    h.step (singleEventBuffer (Midi::noteOn (60, 100)), kBlock);
+    for (int b = 0; b < 8; ++b) h.step (juce::MidiBuffer{}, kBlock);
+
+    auto countActive = [&]
+    {
+        int n = 0;
+        for (int i = 0; i < h.engine.synth().getNumVoices(); ++i)
+            if (h.engine.synth().getVoice (i)->isVoiceActive()) ++n;
+        return n;
+    };
+    VK_REQUIRE (countActive() == 1);
+
+    // Second note: legato transition from C4 -> E4. The active voice should
+    // be handed off (preserved envelope, glided pitch) - never two voices.
+    h.step (singleEventBuffer (Midi::noteOn (64, 100)), kBlock);
+    VK_EXPECT_EQ (countActive(), 1);
+
+    // The single active voice should now be playing E4, not C4.
+    int soundingNew = 0;
+    int soundingOld = 0;
+    for (int i = 0; i < h.engine.synth().getNumVoices(); ++i)
+    {
+        auto* v = dynamic_cast<WTVoice*> (h.engine.synth().getVoice (i));
+        if (v == nullptr || ! v->isVoiceActive()) continue;
+        if (v->getCurrentlyPlayingNote() == 64) ++soundingNew;
+        if (v->getCurrentlyPlayingNote() == 60) ++soundingOld;
+    }
+    VK_EXPECT_EQ (soundingNew, 1);
+    VK_EXPECT_EQ (soundingOld, 0);
+}
+
+VK_TEST (SynthEngine_MonoLegatoTransitionDoesNotDoubleVoices)
+{
+    // Concrete regression: with the previous code, a legato press fanned out
+    // into TWO simultaneous voices (the held voice in release + a fresh idle
+    // voice in attack on the new note). That was both audible (extra
+    // amplitude) and stole CPU. The hand-off must keep the synth at exactly
+    // one sounding voice through the transition.
+    EngineHarness h;
+    setParameter (h.tp, "mono",   1.0f);
+    setParameter (h.tp, "legato", 1.0f);
+    // Long release so a stale "old" voice would still register as active
+    // for several blocks past the transition - the bug is observable for
+    // the entire release window.
+    setParameter (h.tp, "a_r", 0.5f);
+
+    h.step (singleEventBuffer (Midi::noteOn (60, 100)), kBlock);
+    for (int b = 0; b < 4; ++b) h.step (juce::MidiBuffer{}, kBlock);
+
+    // Walk a small ascending phrase the way a player would.
+    const int notes[] = { 62, 64, 65, 67 };
+    int maxActiveSeen = 0;
+    for (int n : notes)
+    {
+        h.step (singleEventBuffer (Midi::noteOn (n, 100)), kBlock);
+        int active = 0;
+        for (int i = 0; i < h.engine.synth().getNumVoices(); ++i)
+            if (h.engine.synth().getVoice (i)->isVoiceActive()) ++active;
+        if (active > maxActiveSeen) maxActiveSeen = active;
+    }
+    VK_EXPECT_MSG (maxActiveSeen == 1,
+                   juce::String ("legato phrase produced ")
+                       + juce::String (maxActiveSeen)
+                       + " concurrent voices (expected 1)");
+}
+
 VK_TEST (SynthEngine_PolyModeRunsMultipleVoices)
 {
     EngineHarness h;
