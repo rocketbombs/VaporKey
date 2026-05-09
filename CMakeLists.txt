@@ -97,6 +97,17 @@ target_link_libraries(VaporKey PRIVATE
     juce::juce_recommended_warning_flags
 )
 
+# MSVC's whole-program optimiser (p2\main.cpp) hits a fatal C1001 during the
+# VST3 link's "Generating code" phase on Wavetable.cpp - the 24 wavetable
+# generators in that TU together exceed what the LTCG back-end can handle,
+# even with each generator already extracted into its own free function.
+# /GL- on this single source overrides the target's /GL so the file is
+# compiled normally; the rest of the plugin still gets LTO.
+if(MSVC)
+    set_source_files_properties(Source/Wavetable.cpp PROPERTIES
+        COMPILE_OPTIONS "/GL-")
+endif()
+
 # Stricter warnings on VaporKey's own sources only. juce_recommended_warning_flags
 # above provides the JUCE-blessed baseline; layering extras at the target scope
 # keeps them off JUCE's own translation units. -Wconversion will surface a fair

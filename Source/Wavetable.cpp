@@ -140,6 +140,8 @@ const std::vector<WavetableLibrary::CategoryEntry>& WavetableLibrary::categories
 // an MSVC LTCG internal-compiler-error that triggers when the constructor
 // holds too many lambda bodies in one translation unit
 // (fatal error C1001 from p2\main.cpp during whole-program optimisation).
+// CMakeLists.txt additionally disables /GL on this TU because the bug
+// re-surfaced at link-time codegen even with the lambdas factored out.
 namespace
 {
     using Buf  = std::array<float, Wavetable::kFrameSize>;
