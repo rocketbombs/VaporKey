@@ -18,6 +18,19 @@ versions may break parameter or preset compatibility.
   per-platform pluginval pass.
 
 ### Fixed
+- **Mono + legato now actually glides.** The previous flow set a "skip
+  envelope retrigger" flag on the held voice and emitted a noteOff/noteOn
+  pair, expecting the synth to land the new note on the same voice. JUCE's
+  `findFreeVoice` doesn't pick voices that are still in release, so the
+  noteOn went to a fresh idle voice instead — the held voice was left
+  decaying with its flag never consumed, and the new voice attacked from
+  zero. Net effect: every "legato" press behaved like a retrigger, *and*
+  the synth briefly used two voices per legato note (released + attacking).
+  Fixed by arming a hand-off flag on the active voice; its `stopNote` (when
+  the synth processes the noteOff) now clears `currentlyPlayingNote`
+  without releasing envelopes, so `findFreeVoice` picks that same voice up
+  for the immediately-following noteOn and the new `startNote` glides on
+  preserved envelope / phase / filter state.
 - Mono bus output: voice render and FX chain previously aliased the right
   channel pointer to the left buffer, then ran every per-channel operation
   (distortion, EQ, pan summation) twice into the same memory, doubling gain

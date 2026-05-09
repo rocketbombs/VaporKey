@@ -32,6 +32,20 @@ public:
     // The flag is consumed (cleared) inside startNote.
     void setLegatoSkipEnvRetrigger (bool b) noexcept { legatoSkipEnvRetrigger = b; }
 
+    // Arm a legato hand-off. Consumed inside stopNote (when the synth
+    // delivers the noteOff for the previously held note): instead of
+    // releasing envelopes, the voice clears its JUCE currentlyPlayingNote
+    // (so findFreeVoice picks it up for the matching same-sample noteOn)
+    // and sets the skip-envelope-retrigger flag for that startNote. Net
+    // effect: pitch glides on the same voice with envelopes / phases /
+    // filter state intact.
+    //
+    // We must defer the clear until stopNote runs - clearing synchronously
+    // from the message thread would silence the voice for the samples
+    // between block start and the actual noteOff sample position, since
+    // renderNextBlock early-returns when isVoiceActive() is false.
+    void armLegatoTransition() noexcept { legatoArmed = true; }
+
 private:
     struct OscState
     {
@@ -75,6 +89,7 @@ private:
     float glideCoef = 1.0f; // per-sample
     float velocityNorm = 1.0f;
     bool  legatoSkipEnvRetrigger = false;
+    bool  legatoArmed = false;  // see armLegatoTransition()
 
     juce::Random rng;
 

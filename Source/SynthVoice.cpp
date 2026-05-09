@@ -112,6 +112,24 @@ void WTVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound*, 
 
 void WTVoice::stopNote (float, bool allowTailOff)
 {
+    if (legatoArmed)
+    {
+        // Mono+legato hand-off: SynthEngine emitted a noteOff/noteOn pair at
+        // the same sample position to glide on the same voice. JUCE doesn't
+        // know about that, so it would route the upcoming noteOn to a fresh
+        // idle voice (since this one is still in sustain) and the legato
+        // flag would be wasted. We free this voice from JUCE's perspective
+        // here - clearCurrentNote drops currentlyPlayingNote so findFreeVoice
+        // returns this voice for the immediately-following noteOn - while
+        // leaving every audio-relevant member (envelopes, oscillator phases,
+        // filter, noise state) untouched. The legato-skip flag is set so
+        // the matching startNote keeps the existing envelope state running.
+        clearCurrentNote();
+        legatoArmed = false;
+        legatoSkipEnvRetrigger = true;
+        return;
+    }
+
     if (allowTailOff)
     {
         ampEnv.noteOff();
