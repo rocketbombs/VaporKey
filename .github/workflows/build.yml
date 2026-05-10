@@ -104,6 +104,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Windows Defender realtime scanning briefly holds .obj/.pdb files as
+      # cl.exe writes them; the parent cl.exe then reports
+      #   D8040: error creating or communicating with child process
+      # at a non-deterministic point during the plugin build (different file
+      # each run - LookAndFeel one run, VaporWidgets the next). Excluding the
+      # workspace, MSVC toolchain dirs, and the build processes themselves
+      # removes that interference without disabling Defender system-wide.
+      # Add-MpPreference needs the elevated shell GitHub-hosted runners
+      # already provide.
+      - name: Exempt build paths from Defender realtime scan
+        shell: pwsh
+        run: |
+          Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE"
+          Add-MpPreference -ExclusionPath "C:\Program Files\Microsoft Visual Studio"
+          Add-MpPreference -ExclusionPath "C:\Program Files (x86)\Microsoft Visual Studio"
+          Add-MpPreference -ExclusionPath "C:\Program Files (x86)\Windows Kits"
+          Add-MpPreference -ExclusionProcess "cl.exe"
+          Add-MpPreference -ExclusionProcess "link.exe"
+          Add-MpPreference -ExclusionProcess "MSBuild.exe"
+          Add-MpPreference -ExclusionProcess "cmake.exe"
+
       - name: Configure
         shell: cmd
         run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DVAPORKEY_LTO=OFF
@@ -111,12 +132,15 @@ jobs:
       - name: Build
         # VaporKey_All builds both VST3 and Standalone (the artefacts this job
         # uploads). Targeting it explicitly avoids rebuilding VaporKeyTests and
-        # VaporKeyPresetLint here - those already ran on Linux. --parallel 2
-        # caps MSBuild project-level concurrency so the VST3 and Standalone
-        # links don't both run /MP-parallel cl.exe pools at once and OOM-kill
-        # the runner.
+        # VaporKeyPresetLint here - those already ran on Linux.
+        #
+        # --parallel 1: build vcxproj sequentially. Combined with /MP not being
+        # set in CMakeLists.txt this caps the live cl.exe count at exactly 1.
+        # Slower than --parallel 2 (which only buys us ~1 small helper project
+        # in parallel with VaporKey.vcxproj anyway) but rules out concurrency
+        # entirely as a contributor to the recurring D8040 failures.
         shell: cmd
-        run: cmake --build build --config Release --target VaporKey_All --parallel 2
+        run: cmake --build build --config Release --target VaporKey_All --parallel 1
 
       - name: Locate VST3
         id: locate
