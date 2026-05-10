@@ -66,6 +66,107 @@ void MasterPage::PresetListModel::listBoxItemClicked (int row, const juce::Mouse
     owner.loadEntry (owner.visibleRows[(size_t) row]);
 }
 
+int MasterPage::CategoryListModel::getNumRows()
+{
+    // All + factory categories + User
+    return 2 + (int) VKPresets::NumCategories;
+}
+
+void MasterPage::CategoryListModel::paintListBoxItem (int row, juce::Graphics& g,
+                                                      int width, int height, bool selected)
+{
+    const auto labels = owner.categoryButtonLabels();
+    if (row < 0 || row >= labels.size()) return;
+
+    const bool isUserRow = (row == labels.size() - 1);
+    const auto accent    = isUserRow ? Colors::neonAmber : Colors::neonCyan;
+
+    if (selected)
+    {
+        g.setColour (Colors::neonPink.withAlpha (0.30f));
+        g.fillRect (0, 0, width, height);
+        g.setColour (Colors::neonPink);
+        g.fillRect (0, 0, 3, height);
+    }
+    else
+    {
+        g.setColour (Colors::panelHi.withAlpha (0.35f));
+        g.fillRect (0, height - 1, width, 1);
+    }
+
+    g.setFont (Fonts::section());
+    g.setColour (selected ? Colors::textBright : accent.withAlpha (0.85f));
+    g.drawText (labels[row].toUpperCase(), 10, 0, width - 50, height,
+                juce::Justification::centredLeft);
+
+    g.setFont (Fonts::small());
+    g.setColour (selected ? Colors::neonPink.withAlpha (0.85f)
+                          : accent.withAlpha (0.55f));
+    g.drawText (juce::String (owner.countForCategory (row)),
+                width - 44, 0, 36, height, juce::Justification::centredRight);
+}
+
+void MasterPage::CategoryListModel::listBoxItemClicked (int row, const juce::MouseEvent&)
+{
+    owner.setCategorySelection (row);
+}
+
+juce::StringArray MasterPage::categoryButtonLabels() const
+{
+    juce::StringArray out;
+    out.add ("All");
+    const auto cats = VKPresets::categoryNames();
+    for (auto& c : cats) out.add (c);
+    out.add ("User");
+    return out;
+}
+
+bool MasterPage::entryMatchesFilter (const PresetEntry& e) const
+{
+    // Category filter
+    const int N = (int) VKPresets::NumCategories;
+    if (categorySelection > 0)
+    {
+        if (categorySelection == N + 1)
+        {
+            if (e.isFactory) return false;
+        }
+        else
+        {
+            if (! e.isFactory || e.category != categorySelection - 1)
+                return false;
+        }
+    }
+
+    // Search filter (case-insensitive substring match on name)
+    if (searchQuery.isNotEmpty()
+        && ! e.name.containsIgnoreCase (searchQuery))
+        return false;
+
+    return true;
+}
+
+int MasterPage::countForCategory (int sel) const
+{
+    const int N = (int) VKPresets::NumCategories;
+    int n = 0;
+    for (const auto& e : entries)
+    {
+        bool catMatch = false;
+        if (sel == 0)              catMatch = true;
+        else if (sel == N + 1)     catMatch = ! e.isFactory;
+        else                       catMatch = e.isFactory && e.category == sel - 1;
+        if (! catMatch) continue;
+
+        if (searchQuery.isNotEmpty()
+            && ! e.name.containsIgnoreCase (searchQuery))
+            continue;
+
+        ++n;
+    }
+    return n;
+}
+
 void MasterPage::rebuildEntries()
 {
     entries.clear();
@@ -83,26 +184,33 @@ void MasterPage::rebuildEntries()
 void MasterPage::rebuildVisible()
 {
     visibleRows.clear();
-    // categoryFilter item IDs:
-    //   1            = All
-    //   2..1+N       = factory category
-    //   2+N          = User
-    const int sel = categoryFilter.getSelectedId();
-    const int N   = (int) VKPresets::NumCategories;
 
     for (size_t i = 0; i < entries.size(); ++i)
-    {
-        const auto& e = entries[i];
-        bool match = false;
-        if (sel <= 0 || sel == 1) match = true;
-        else if (sel == 2 + N)    match = ! e.isFactory;
-        else                      match = e.isFactory && e.category == (sel - 2);
-
-        if (match) visibleRows.push_back ((int) i);
-    }
+        if (entryMatchesFilter (entries[i]))
+            visibleRows.push_back ((int) i);
 
     presetList.updateContent();
     presetList.repaint();
+    if (categoryModel != nullptr)
+        categoryList.repaint(); // counts may have changed when search updates
+    updateCountLabel();
+}
+
+void MasterPage::setCategorySelection (int sel)
+{
+    const int max = 1 + (int) VKPresets::NumCategories; // last index = User
+    categorySelection = juce::jlimit (0, max, sel);
+    categoryList.selectRow (categorySelection, false, true);
+    rebuildVisible();
+    refreshNowPlaying();
+}
+
+void MasterPage::updateCountLabel()
+{
+    const int total = (int) entries.size();
+    const int shown = (int) visibleRows.size();
+    countLabel.setText ("SHOWING " + juce::String (shown) + " / " + juce::String (total),
+                        juce::dontSendNotification);
 }
 
 int MasterPage::findEntryIndex (const juce::String& name, bool isFactory) const
@@ -278,6 +386,12 @@ MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
     presetLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (presetLabel);
 
+    countLabel.setText ("SHOWING 0 / 0", juce::dontSendNotification);
+    countLabel.setFont (Fonts::small());
+    countLabel.setColour (juce::Label::textColourId, Colors::neonCyan.withAlpha (0.7f));
+    countLabel.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (countLabel);
+
     if (proc.currentPresetName.isEmpty())
     {
         proc.currentPresetName = VaporKeyAudioProcessor::factoryPresetNames()[proc.getCurrentProgram()];
@@ -289,13 +403,31 @@ MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
     presetNowLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (presetNowLabel);
 
-    presetModel = std::make_unique<PresetListModel> (*this);
-    presetList.setModel (presetModel.get());
-    presetList.setRowHeight (30);
-    presetList.setColour (juce::ListBox::backgroundColourId, Colors::bg.darker (0.2f));
-    presetList.setColour (juce::ListBox::outlineColourId,    Colors::neonCyan.withAlpha (0.45f));
-    presetList.setOutlineThickness (1);
-    addAndMakeVisible (presetList);
+    searchLabel.setText ("SEARCH", juce::dontSendNotification);
+    searchLabel.setFont (Fonts::section());
+    searchLabel.setColour (juce::Label::textColourId, Colors::neonCyan);
+    searchLabel.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (searchLabel);
+
+    searchField.setFont (Fonts::preset());
+    searchField.setColour (juce::TextEditor::backgroundColourId, Colors::panelHi2);
+    searchField.setColour (juce::TextEditor::textColourId, Colors::textBright);
+    searchField.setColour (juce::TextEditor::outlineColourId, Colors::neonCyan.withAlpha (0.5f));
+    searchField.setColour (juce::TextEditor::focusedOutlineColourId, Colors::neonPink);
+    searchField.setColour (juce::TextEditor::highlightColourId, Colors::neonPink.withAlpha (0.35f));
+    searchField.setTextToShowWhenEmpty ("Filter by name...", Colors::textDim);
+    searchField.setIndents (8, 4);
+    searchField.onTextChange = [this]
+    {
+        searchQuery = searchField.getText().trim();
+        rebuildVisible();
+        refreshNowPlaying();
+    };
+    searchField.onEscapeKey = [this]
+    {
+        searchField.setText ({}, juce::sendNotification);
+    };
+    addAndMakeVisible (searchField);
 
     categoryLabel.setText ("CATEGORY", juce::dontSendNotification);
     categoryLabel.setFont (Fonts::section());
@@ -303,18 +435,24 @@ MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
     categoryLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (categoryLabel);
 
-    categoryFilter.addItem ("All", 1);
-    {
-        const auto cats = VKPresets::categoryNames();
-        for (int i = 0; i < cats.size(); ++i)
-            categoryFilter.addItem (cats[i], 2 + i);
-        categoryFilter.addItem ("User", 2 + cats.size());
-    }
-    categoryFilter.setSelectedId (1, juce::dontSendNotification);
-    categoryFilter.onChange = [this] { rebuildVisible(); refreshNowPlaying(); };
-    addAndMakeVisible (categoryFilter);
+    categoryModel = std::make_unique<CategoryListModel> (*this);
+    categoryList.setModel (categoryModel.get());
+    categoryList.setRowHeight (22);
+    categoryList.setColour (juce::ListBox::backgroundColourId, Colors::bg.darker (0.3f));
+    categoryList.setColour (juce::ListBox::outlineColourId,    Colors::neonCyan.withAlpha (0.45f));
+    categoryList.setOutlineThickness (1);
+    addAndMakeVisible (categoryList);
+
+    presetModel = std::make_unique<PresetListModel> (*this);
+    presetList.setModel (presetModel.get());
+    presetList.setRowHeight (28);
+    presetList.setColour (juce::ListBox::backgroundColourId, Colors::bg.darker (0.2f));
+    presetList.setColour (juce::ListBox::outlineColourId,    Colors::neonCyan.withAlpha (0.45f));
+    presetList.setOutlineThickness (1);
+    addAndMakeVisible (presetList);
 
     rebuildEntries();
+    categoryList.selectRow (0, false, true);
     {
         const int idx = findEntryIndex (proc.currentPresetName, proc.currentPresetIsFactory);
         if (idx >= 0)
@@ -375,12 +513,14 @@ MasterPage::MasterPage (VaporKeyAudioProcessor& p) : proc (p)
     copy.setColour (juce::Label::textColourId, Colors::textDim);
     copy.setJustificationType (juce::Justification::topLeft);
     addAndMakeVisible (copy);
+
+    updateCountLabel();
 }
 
 void MasterPage::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().reduced (10);
-    const int leftW = (int) (r.getWidth() * 0.42);
+    const int leftW = (int) (r.getWidth() * 0.46);
     juce::Rectangle<int> sLeft  (r.getX(),                  r.getY(), leftW - 5,             r.getHeight());
     juce::Rectangle<int> sRight (r.getX() + leftW + 5,      r.getY(), r.getWidth() - leftW - 5, r.getHeight());
     drawSectionBg (g, sLeft,  Colors::neonPink, "PRESETS");
@@ -390,33 +530,46 @@ void MasterPage::paint (juce::Graphics& g)
 void MasterPage::resized()
 {
     auto r = getLocalBounds().reduced (10);
-    const int leftW = (int) (r.getWidth() * 0.42);
+    const int leftW = (int) (r.getWidth() * 0.46);
     juce::Rectangle<int> sLeft  (r.getX(),                  r.getY(), leftW - 5,             r.getHeight());
     juce::Rectangle<int> sRight (r.getX() + leftW + 5,      r.getY(), r.getWidth() - leftW - 5, r.getHeight());
 
+    // ---- Left panel: preset browser ------------------------------------
     {
-        auto a = sLeft; a.removeFromTop (kSectionTitleH); a.reduce (16, 12);
+        auto a = sLeft; a.removeFromTop (kSectionTitleH); a.reduce (14, 12);
 
-        presetLabel.setBounds (a.removeFromTop (18));
+        // Header row: PRESETS label + count chip on the right
+        auto headerRow = a.removeFromTop (18);
+        countLabel.setBounds (headerRow.removeFromRight (160));
+        presetLabel.setBounds (headerRow);
         a.removeFromTop (4);
-        presetNowLabel.setBounds (a.removeFromTop (40));
-        a.removeFromTop (6);
 
-        auto catRow = a.removeFromTop (28);
-        categoryLabel.setBounds (catRow.removeFromLeft (90));
-        categoryFilter.setBounds (catRow.reduced (2, 1));
+        presetNowLabel.setBounds (a.removeFromTop (36));
         a.removeFromTop (8);
 
-        auto btnRow = a.removeFromTop (32);
+        // Search row
+        auto searchRow = a.removeFromTop (28);
+        searchLabel.setBounds (searchRow.removeFromLeft (74));
+        searchField.setBounds (searchRow.reduced (2, 1));
+        a.removeFromTop (8);
+
+        // Reserve fixed-height controls at the bottom (prev/next + name/buttons).
+        const int controlsH = 32 + 8 + 24 + 32 + 8 + 32; // prev/next + gap + name lbl/fld + gap + buttons
+        auto bottom = a.removeFromBottom (controlsH);
+
+        // Middle: category sidebar + preset list
+        const int catW = 124;
+        auto catCol = a.removeFromLeft (catW);
+        a.removeFromLeft (8);
+        categoryList.setBounds (catCol);
+        presetList.setBounds (a);
+
+        // Bottom controls
+        auto btnRow = bottom.removeFromTop (32);
         prevBtn.setBounds (btnRow.removeFromLeft (110));
         btnRow.removeFromLeft (8);
         nextBtn.setBounds (btnRow.removeFromLeft (110));
-        a.removeFromTop (8);
-
-        const int controlsH = 24 + 32 + 8 + 32;
-        auto bottom = a.removeFromBottom (controlsH);
-
-        presetList.setBounds (a);
+        bottom.removeFromTop (8);
 
         nameLabel.setBounds (bottom.removeFromTop (24));
         nameField.setBounds (bottom.removeFromTop (32));
@@ -428,6 +581,7 @@ void MasterPage::resized()
         deleteBtn.setBounds (br.removeFromLeft (bw));
     }
 
+    // ---- Right panel: master / about -----------------------------------
     {
         auto a = sRight; a.removeFromTop (kSectionTitleH); a.reduce (16, 12);
         brand.setBounds (a.removeFromTop (40));
