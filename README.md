@@ -27,9 +27,19 @@ FX chain — wrapped in a single audio-reactive editor.
 ## Synth engine
 
 **Oscillators**
-- Three wavetable oscillators, mip-mapped across 10 octaves, with nine factory
-  banks of 8 frames each: *Basic, Saws, Squares, Vocal, Bell, Digital,
-  Harmonic, Glass, Reso*
+- Three wavetable oscillators, mip-mapped across 10 octaves, drawing from a
+  bank of **23 factory shapes** in 8-frame morphs, organised into six
+  categories surfaced in a multi-column popup picker:
+  - **Analog** — Basic, Saws, Squares
+  - **Vocal** — Vowels, Choir, Whisper
+  - **Harmonic** — Harmonic, Organ, Sawteeth, Even/Odd
+  - **Inharmonic** — Bell, Glass, Tine, Mallet, Pluck
+  - **Digital** — Digital, FM Stack, Bitcrush
+  - **Special** — Reso, Sync, RingMod, Wavefold
+- **X-MOD matrix.** Each oscillator can pick another oscillator (or none)
+  as an FM source, ring modulator, or amplitude modulator, with an
+  independent depth control and a small node-and-arrow diagram on the
+  OSC page visualising the active routing.
 - Per-osc level, pan, coarse/fine tuning, unison (1–7), detune, phase
 - Drag-and-drop `.wav` import for custom wavetables
 - Sub oscillator (sine / square / triangle, –1 or –2 octaves)
@@ -38,6 +48,8 @@ FX chain — wrapped in a single audio-reactive editor.
 **Filter & envelopes**
 - State-variable TPT filter (LP / BP / HP) with cutoff, resonance, drive,
   key tracking, and velocity
+- Antiderivative-anti-aliased (`fastTanh` ADAA) drive and post-filter
+  saturation per voice
 - Amp ADSR, Mod ADSR (routes to filter), and a decay-only pitch envelope
   (±24 semitones)
 
@@ -58,12 +70,16 @@ FX chain — wrapped in a single audio-reactive editor.
 - *Sat* — soft tanh saturation on the master bus
 
 **FX chain** *(fixed routing)*
-1. Distortion (Soft / Hard / Fold / Bit)
+1. **Distortion** (Soft / Hard / Fold / Bit), 4× polyphase-IIR halfband
+   oversampled so wavefolder and hard-clip harmonics don't fold back into
+   the audible range
 2. 3-band EQ (low shelf, parametric mid, high shelf)
 3. Chorus
 4. Phaser
 5. Stereo ping-pong delay (free or tempo-synced)
-6. Plate reverb
+6. **Plate reverb** — 1997 Dattorro topology (input bandwidth filter →
+   diffuser cascade → modulated figure-eight tank → seven-tap stereo
+   read), structurally stereo with no width control needed
 7. Compressor
 8. Master gain & stereo width
 
@@ -117,12 +133,32 @@ Outputs:
 - `build/VaporKey_artefacts/Release/VST3/VaporKey.vst3`
 - `build/VaporKey_artefacts/Release/Standalone/VaporKey[.exe|.app]`
 
+Useful CMake flags:
+
+- `-DVAPORKEY_LTO=OFF` — disable link-time optimisation. ON by default for
+  local Release builds (smaller, faster binary); CI passes OFF to keep peak
+  link memory under the GitHub-hosted runners' 16 GB cap.
+
 #### macOS (universal binary)
 
 ```bash
 cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
 cmake --build build --config Release --parallel
 ```
+
+#### Windows (Ninja — recommended for fast iteration)
+
+The default CMake invocation works on Windows (it picks the Visual Studio
+generator), but a Ninja-based build runs noticeably faster and matches what
+CI uses. From a Developer Command Prompt for VS 2022:
+
+```cmd
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+```
+
+CI uses `ilammy/msvc-dev-cmd` to set up the same MSVC environment a
+Developer Prompt provides.
 
 #### Linux dependencies (Debian / Ubuntu)
 
@@ -143,11 +179,13 @@ Source/
   PluginEditor.{h,cpp}       editor shell, page switcher, audio-reactive paint loop
   Parameters.{h,cpp}         APVTS layout + cached atomic pointers (SynthParams)
   SynthEngine.{h,cpp}        voices, MIDI filter, macro/mod-wheel/aftertouch sum
-  SynthVoice.{h,cpp}         per-voice synthesis (oscs, sub, noise, filter, envs)
-  Wavetable.{h,cpp}          mip-mapped wavetable oscillator
+  SynthVoice.{h,cpp}         per-voice synthesis (oscs, X-MOD, sub, noise, filter, envs)
+  Wavetable.{h,cpp}          mip-mapped wavetable oscillator + library scaffold
+  WavetableShapes.{h,cpp}    23 shape generators (Basic..Bitcrush) + categories
   WavetableImport.{h,cpp}    drag-and-drop .wav -> custom table
   Arpeggiator.{h,cpp}        MIDI-rewriting arp, tempo-synced
   FxChain.{h,cpp}            distortion / EQ / chorus / phaser / delay / reverb / comp / width
+  PlateReverb.{h,cpp}        Dattorro-topology plate reverb implementation
   PresetStore.{h,cpp}        factory + user preset save/load/rename
   Presets.{h,cpp}            JSON parser for embedded factory presets
   Presets.json               factory preset data (embedded at build)
@@ -155,7 +193,14 @@ Source/
   LookAndFeel.{h,cpp}        custom JUCE LookAndFeel
   Pages/                     one source pair per editor page
     OscPage, FilterEnvPage, ModPage, ArpPage, FxPage, MasterPage
-  Widgets/                   reusable UI: VaporWidgets, Meters, EqCurve, WavetableDisplay
+    EditorLayout.h           shared layout constants for the page grid
+  Widgets/                   reusable UI components
+    VaporWidgets             rotary knobs, combos, toggles, common look
+    Meters                   peak / RMS bar + scope ring buffer renderer
+    EqCurve                  interactive 3-band EQ curve display
+    WavetableDisplay         per-osc audio-reactive frame visualiser
+    WavetableShapePicker     categorised multi-column popup shape picker
+    OscModMatrix             X-MOD source / type / amount + routing diagram
   Tests/                     unit + audio-regression suite (VaporKeyTests target)
     TestRunner.{h,cpp}       tiny self-registering framework, single binary
     TestSupport.{h,cpp}      headless TestProcessor, audio fixtures, .wav helpers

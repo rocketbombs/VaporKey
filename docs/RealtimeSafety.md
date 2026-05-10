@@ -4,8 +4,13 @@ VaporKey's audio thread runs in `processBlock` and the JUCE `Synthesiser`
 voices it drives. Anything called from there - directly or transitively - has
 to be allocation-free, lock-free, and bounded in time. This file is the
 checklist; if you change a hot-path file (`PluginProcessor.cpp`,
-`SynthEngine.cpp`, `Arpeggiator.cpp`, `FxChain.cpp`, `SynthVoice.cpp`) check
-it again.
+`SynthEngine.cpp`, `Arpeggiator.cpp`, `FxChain.cpp`, `PlateReverb.cpp`,
+`SynthVoice.cpp`, `Wavetable.cpp`) check it again.
+
+`WavetableShapes.cpp` is *not* on the hot path - the 23 shape generators
+run during synth init to fill the mip pyramid and never execute again. The
+TU is built at `/Od` on MSVC to dodge a UTC backend ICE; the optimisation
+delta is invisible because nothing in it runs in real time.
 
 ## Thread roles
 
