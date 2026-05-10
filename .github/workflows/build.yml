@@ -139,8 +139,32 @@ jobs:
         # Slower than --parallel 2 (which only buys us ~1 small helper project
         # in parallel with VaporKey.vcxproj anyway) but rules out concurrency
         # entirely as a contributor to the recurring D8040 failures.
+        #
+        # Diagnostics (temporary while chasing D8040):
+        #   CL=/Bt+   - print c1 (front-end) and c2 (codegen) pass timings for
+        #               every TU, so the last filename printed before the
+        #               crash is the file cl.exe died on (without /Bt+, MSBuild
+        #               buffers output and the "compiling X" line for the
+        #               failing TU can be missing entirely).
+        #   /diagnostics:caret - better source-line context if it ever does
+        #                        emit a real diagnostic.
+        #   MSBuild /v:detailed plus a diagnostic file logger - capture the
+        #   full child-process command line cl.exe was invoked with; that
+        #   tells us whether the driver was given one big response file or
+        #   per-TU invocations, and lets us reproduce the exact compile
+        #   locally if needed.
         shell: cmd
-        run: cmake --build build --config Release --target VaporKey_All --parallel 1
+        env:
+          CL: /Bt+ /diagnostics:caret
+        run: cmake --build build --config Release --target VaporKey_All --parallel 1 -- /v:detailed /flp:logfile=msbuild.log;verbosity=diagnostic
+
+      - name: Upload MSBuild diagnostic log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-msbuild-log
+          path: build/msbuild.log
+          if-no-files-found: warn
 
       - name: Locate VST3
         id: locate
