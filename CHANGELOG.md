@@ -6,6 +6,16 @@ versions may break parameter or preset compatibility.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-10
+
+The 0.5 cycle is the first release with the expanded 23-shape wavetable bank,
+cross-oscillator FM / ring / AM modulation, the Dattorro plate reverb, 4×
+oversampled distortion + ADAA voice saturation, the 170-preset factory bank,
+the two-pane preset browser, and the validation suite (`VaporKeyTests`)
+covering the synth engine, FX chain, presets, and end-to-end audio. CI was
+also overhauled to ship reliable Windows / macOS / Linux artifacts on every
+push.
+
 ### Added
 - **Factory preset bank rebuilt at 170 patches.** The 57-preset starter
   bank grew to 170 presets across Bass (21), Lead (24), Pad (24),

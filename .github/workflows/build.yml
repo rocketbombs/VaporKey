@@ -294,10 +294,12 @@ jobs:
           if-no-files-found: error
 
   # On tag push (vX.Y.Z), bundle the per-OS artefacts into one zip per platform
-  # and create a draft GitHub release so the maintainer can review the auto-
-  # generated notes before publishing.
+  # and publish a prerelease GitHub release with auto-generated notes (with an
+  # optional curated body from .github/release_notes/<tag>.md prepended).
+  # While the project is < 1.0 every tag ships as a prerelease — flip
+  # `prerelease: false` once we're ready to mark a tag stable.
   release:
-    name: Draft GitHub Release
+    name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [windows, macos, linux]
     runs-on: ubuntu-latest
@@ -332,9 +334,27 @@ jobs:
           done
           ls -la out
 
-      - name: Create draft release
+      # Tags can ship with hand-written release notes by adding a markdown
+      # file at .github/release_notes/<tag>.md; if it doesn't exist we fall
+      # back to the auto-generated commit/PR list alone.
+      - name: Locate release notes
+        id: notes
+        run: |
+          set -euo pipefail
+          file=".github/release_notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$file" ]; then
+            echo "Using curated notes from $file"
+            echo "body_path=$file" >> "$GITHUB_OUTPUT"
+          else
+            echo "No curated notes file at $file — falling back to auto-generated"
+            echo "body_path=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish prerelease
         uses: softprops/action-gh-release@v2
         with:
           files: out/*.zip
-          draft: true
+          draft: false
+          prerelease: true
           generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.body_path }}

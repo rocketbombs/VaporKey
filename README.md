@@ -5,7 +5,7 @@ tuned for vaporwave, synthwave, and lo-fi production. Three wavetable
 oscillators, two LFOs, four assignable macros, an arpeggiator, and a fixed
 FX chain — wrapped in a single audio-reactive editor.
 
-> **Status: pre-release (0.4.x).** Parameters, preset format, and saved-state
+> **Status: pre-release (0.5.x).** Parameters, preset format, and saved-state
 > compatibility may change without notice between minor versions. See
 > [CHANGELOG.md](CHANGELOG.md) for what landed most recently.
 
