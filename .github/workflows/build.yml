@@ -17,16 +17,18 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Pluginval download URL pattern. Pinned by the user (bump as new pluginval
-# releases come out). 'latest' tracks the most recent stable release.
+# Pluginval download URL pattern. Pinned to a specific tag so a pluginval
+# upstream regression can't silently break every build - bump intentionally
+# after verifying the new release locally.
 env:
-  PLUGINVAL_VERSION: latest
+  PLUGINVAL_VERSION: v1.0.4
   PLUGINVAL_STRICTNESS: "5"
 
 jobs:
   preset-lint:
     name: Lint factory presets
     runs-on: ubuntu-22.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -59,6 +61,7 @@ jobs:
     name: Run test suite
     runs-on: ubuntu-22.04
     needs: preset-lint
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -96,6 +99,7 @@ jobs:
     name: Build (Windows VST3)
     runs-on: windows-2022
     needs: tests
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -145,6 +149,7 @@ jobs:
         with:
           name: VaporKey-Windows-VST3
           path: ${{ env.VST3_PATH }}
+          if-no-files-found: error
 
       - name: Upload Standalone
         uses: actions/upload-artifact@v4
@@ -157,6 +162,7 @@ jobs:
     name: Build (macOS VST3)
     runs-on: macos-14
     needs: tests
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -166,8 +172,12 @@ jobs:
       - name: Build
         # VaporKey_All builds both VST3 and Standalone (the artefacts this job
         # uploads). Targeting it explicitly avoids rebuilding VaporKeyTests and
-        # VaporKeyPresetLint here - those already ran on Linux.
-        run: cmake --build build --config Release --target VaporKey_All --parallel
+        # VaporKeyPresetLint here - those already ran on Linux. --parallel 3
+        # mirrors the Windows/Linux caps so a future code growth doesn't push
+        # the macos-14 runner (3 cores, 14 GB) into the same OOM territory the
+        # other platforms hit; macOS has more headroom today but the ceiling
+        # is real.
+        run: cmake --build build --config Release --target VaporKey_All --parallel 3
 
       - name: Validate with pluginval
         run: |
@@ -185,6 +195,7 @@ jobs:
         with:
           name: VaporKey-macOS-VST3
           path: build/VaporKey_artefacts/Release/VST3/VaporKey.vst3
+          if-no-files-found: error
 
       - name: Upload Standalone
         uses: actions/upload-artifact@v4
@@ -197,6 +208,7 @@ jobs:
     name: Build (Linux VST3)
     runs-on: ubuntu-22.04
     needs: tests
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -243,6 +255,7 @@ jobs:
         with:
           name: VaporKey-Linux-VST3
           path: build/VaporKey_artefacts/Release/VST3/VaporKey.vst3
+          if-no-files-found: error
 
       - name: Upload Standalone
         uses: actions/upload-artifact@v4

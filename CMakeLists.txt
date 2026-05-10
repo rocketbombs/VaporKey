@@ -18,6 +18,18 @@ option(VAPORKEY_LTO "Enable link-time optimization for the plugin" ON)
 # translation units don't get pulled into our stricter set.
 if(MSVC)
     add_compile_options(/MP)
+    # Embed debug info in .obj files (/Z7) instead of routing it through
+    # mspdbsrv.exe (the /Zi PDB type server). When MSBuild's project-level
+    # --parallel layers on top of cl.exe's per-project /MP pool, the type
+    # server saturates and the build aborts mid-compile with
+    #   cl : command line error D8040: error creating or communicating with child process
+    # PRs #31 and #32 patched the symptom (refactor whichever TU happened to
+    # tip the server over) but the underlying cl.exe<->mspdbsrv.exe contention
+    # was unchanged, so each new code addition risked re-triggering it. /Z7
+    # sidesteps the type server entirely. .obj files get bigger; the linker
+    # strips the debug records when /DEBUG isn't passed, so the shipped
+    # Release binaries are unaffected.
+    add_compile_options(/Z7)
 endif()
 
 include(FetchContent)
