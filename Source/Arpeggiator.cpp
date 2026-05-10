@@ -62,43 +62,11 @@ void Arpeggiator::process (juce::MidiBuffer& midi, int numSamples, double curren
         }
     }
 
-    // Transition into/out of arp mode: clear pending state cleanly.
-    if (on != wasOn)
-    {
-        if (currentNote >= 0)
-            pass.addEvent (juce::MidiMessage::noteOff (currentChan, currentNote), 0);
-        currentNote = -1;
-        samplesToOff = -1;
-        // Defer the first step by one full cycle on power-on so step 0 fires
-        // strictly after the chord is registered (matches the rest of the
-        // sequence: chord visible, then step, not the other way round).
-        samplesToStep = on ? stepSamples : 0.0;
-        stepIdx = 0;
-        octOffset = 0;
-        if (! on) { held.clearQuick(); latched.clearQuick(); }
-        wasOn = on;
-    }
-
-    if (! on)
-    {
-        // Pass note events through untouched.
-        for (int i = 0; i < noteEvents.size(); ++i)
-            pass.addEvent (noteEvents.getReference (i), noteSamples.getReference (i));
-        midi.swapWith (pass);
-        return;
-    }
-
-    // ---- Arp on ---- (stepSamples already computed above)
-
-    const int   mode    = (int) (params.arpMode->load() + 0.5f);
-    const int   numOct  = juce::jlimit (1, 4, (int) params.arpOctaves->load());
-    const float gate    = juce::jlimit (0.05f, 1.0f, params.arpGate->load());
-    const float swing   = juce::jlimit (0.0f, 0.5f, params.arpSwing->load());
-
-    // Walk the block, advancing time and emitting events at sub-block points.
-    int cursor = 0;
-    int eventIdx = 0;
-
+    // Update held/latched lists from a single note event. Used both during
+    // arp-on stepping (interleaved with cursor advance) and arp-off
+    // pass-through, so `held` always reflects what the user is physically
+    // holding and the OFF -> ON transition can silence the synth voices that
+    // pass-through left ringing.
     auto applyHeldNoteEvent = [this, latch] (const juce::MidiMessage& msg)
     {
         if (msg.isNoteOn())
@@ -127,6 +95,88 @@ void Arpeggiator::process (juce::MidiBuffer& midi, int numSamples, double curren
                 if (held.getReference (j).note == n) held.remove (j);
         }
     };
+
+    // Transition into/out of arp mode: clean up pending state and re-route
+    // physically-held notes between the synth and the arp's pool so toggling
+    // never leaves a stuck voice droning under the new mode.
+    if (on != wasOn)
+    {
+        // Kill any in-flight arp-emitted note (its scheduling is about to
+        // be invalidated either way).
+        if (currentNote >= 0)
+            pass.addEvent (juce::MidiMessage::noteOff (currentChan, currentNote), 0);
+        currentNote = -1;
+        samplesToOff = -1;
+        // Defer the first step by one full cycle on power-on so step 0 fires
+        // strictly after the chord is registered (matches the rest of the
+        // sequence: chord visible, then step, not the other way round).
+        samplesToStep = on ? stepSamples : 0.0;
+        stepIdx = 0;
+        octOffset = 0;
+
+        if (on)
+        {
+            // OFF -> ON: notes the user is still holding had their note-ons
+            // pass through directly to the synth in OFF mode, so synth voices
+            // are sustaining for those keys. Send matching note-offs now so
+            // the arp can take over the held set cleanly without leaving
+            // stuck voices droning under the sequence.
+            for (const auto& h : held)
+                pass.addEvent (juce::MidiMessage::noteOff (currentChan, h.note), 0);
+
+            // Latch was empty going in (cleared by the prior ON -> OFF
+            // transition); seed it from the currently-held set so a user who
+            // enabled latch+arp while holding keys gets the held chord
+            // latched, the same way it would if they had pressed those keys
+            // after the arp turned on.
+            if (latch)
+            {
+                latched.clearQuick();
+                for (const auto& h : held)
+                    latched.add (h);
+            }
+        }
+        else
+        {
+            // ON -> OFF: arp had been suppressing pass-through for held keys,
+            // so the synth has no voices for them. Re-emit note-ons so the
+            // user's physically-held keys come back as direct voices; future
+            // note-offs in OFF mode (when the user releases) will release
+            // them normally. Latched notes were never physically held, so
+            // discard the latch buffer rather than re-pressing them.
+            for (const auto& h : held)
+            {
+                const int vel = juce::jlimit (1, 127, h.velocity > 0 ? h.velocity : 100);
+                pass.addEvent (juce::MidiMessage::noteOn (currentChan, h.note, (juce::uint8) vel), 0);
+            }
+            latched.clearQuick();
+        }
+        wasOn = on;
+    }
+
+    if (! on)
+    {
+        // Pass note events through, but also keep `held` updated so the next
+        // OFF -> ON transition knows which synth voices need silencing.
+        for (int i = 0; i < noteEvents.size(); ++i)
+        {
+            applyHeldNoteEvent (noteEvents.getReference (i));
+            pass.addEvent (noteEvents.getReference (i), noteSamples.getReference (i));
+        }
+        midi.swapWith (pass);
+        return;
+    }
+
+    // ---- Arp on ---- (stepSamples already computed above)
+
+    const int   mode    = (int) (params.arpMode->load() + 0.5f);
+    const int   numOct  = juce::jlimit (1, 4, (int) params.arpOctaves->load());
+    const float gate    = juce::jlimit (0.05f, 1.0f, params.arpGate->load());
+    const float swing   = juce::jlimit (0.0f, 0.5f, params.arpSwing->load());
+
+    // Walk the block, advancing time and emitting events at sub-block points.
+    int cursor = 0;
+    int eventIdx = 0;
 
     auto pickStepNote = [&] (const juce::Array<Held>& source) -> Held
     {

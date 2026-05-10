@@ -305,6 +305,114 @@ VK_TEST (Arpeggiator_TransitionToOnEmitsClosingNoteOff)
     VK_EXPECT_GT (offCount, 0);
 }
 
+VK_TEST (Arpeggiator_TogglingOnSilencesPassThroughHeldNotes)
+{
+    // Regression: when the arp turns ON while a note is sustaining on the
+    // synth (its note-on was passed through directly during OFF mode), the
+    // transition must emit a matching note-off so the synth releases that
+    // voice. Previously the synth voice droned under the new arp sequence
+    // because the arp had no record of which notes pass-through left
+    // ringing.
+    ArpHarness h;
+    setParameter (h.tp, "arp_on", 0.0f);
+
+    juce::MidiBuffer press = pressChord ({ 60 });
+    h.arp.process (press, 256, 120.0);
+
+    // Sanity: in OFF mode the press flows through unchanged.
+    auto preEvents = collectNoteEvents (press);
+    VK_REQUIRE ((int) preEvents.size() == 1);
+    VK_EXPECT (preEvents[0].isOn);
+    VK_EXPECT_EQ (preEvents[0].note, 60);
+
+    // Flip arp on; first block after the flip should silence the held note.
+    setParameter (h.tp, "arp_on", 1.0f);
+    juce::MidiBuffer post;
+    h.arp.process (post, 256, 120.0);
+
+    bool sawOffFor60 = false;
+    for (const auto meta : post)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOff() && msg.getNoteNumber() == 60)
+            sawOffFor60 = true;
+    }
+    VK_EXPECT (sawOffFor60);
+}
+
+VK_TEST (Arpeggiator_TogglingOffRevivesHeldNotes)
+{
+    // Symmetric to the above: when the arp turns OFF while keys are still
+    // physically held, the synth has no voices for those keys (the arp had
+    // been suppressing pass-through). The transition re-emits note-ons for
+    // every held note so the user's keyboard state stays in sync with what
+    // the synth is sounding.
+    ArpHarness h;
+    setParameter (h.tp, "arp_on",      1.0f);
+    setParameter (h.tp, "arp_mode",    (float) ArpMode::Up);
+    setParameter (h.tp, "arp_div",     0.0f);
+    setParameter (h.tp, "arp_octaves", 1.0f);
+
+    juce::MidiBuffer press = pressChord ({ 60, 64 });
+    h.arp.process (press, 256, 120.0);
+    juce::MidiBuffer empty;
+    h.arp.process (empty, 4096, 120.0);
+
+    setParameter (h.tp, "arp_on", 0.0f);
+    juce::MidiBuffer post;
+    h.arp.process (post, 256, 120.0);
+
+    bool sawOnFor60 = false, sawOnFor64 = false;
+    for (const auto meta : post)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOn())
+        {
+            if (msg.getNoteNumber() == 60) sawOnFor60 = true;
+            if (msg.getNoteNumber() == 64) sawOnFor64 = true;
+        }
+    }
+    VK_EXPECT (sawOnFor60);
+    VK_EXPECT (sawOnFor64);
+}
+
+VK_TEST (Arpeggiator_TogglingOnWithLatchSeedsLatchFromHeld)
+{
+    // If the user is holding a chord with latch on and then enables the arp,
+    // those keys should be treated as the active latched chord - releasing
+    // them after the arp turns on should keep the chord arpeggiating, the
+    // same way it would if the user had pressed the keys after enabling the
+    // arp.
+    ArpHarness h;
+    setParameter (h.tp, "arp_on",      0.0f);
+    setParameter (h.tp, "arp_mode",    (float) ArpMode::Up);
+    setParameter (h.tp, "arp_div",     0.0f);
+    setParameter (h.tp, "arp_octaves", 1.0f);
+    setParameter (h.tp, "arp_latch",   1.0f);
+
+    juce::MidiBuffer press = pressChord ({ 60, 64 });
+    h.arp.process (press, 256, 120.0);
+
+    setParameter (h.tp, "arp_on", 1.0f);
+    juce::MidiBuffer flip;
+    h.arp.process (flip, 32, 120.0);
+
+    juce::MidiBuffer release;
+    release.addEvent (Midi::noteOff (60), 0);
+    release.addEvent (Midi::noteOff (64), 0);
+    h.arp.process (release, 32, 120.0);
+
+    std::vector<int> seq;
+    for (int b = 0; b < 10; ++b)
+    {
+        juce::MidiBuffer m;
+        h.arp.process (m, 1024, 120.0);
+        for (auto& e : collectNoteEvents (m))
+            if (e.isOn) seq.push_back (e.note);
+    }
+    VK_EXPECT_GT ((int) seq.size(), 0);
+}
+
 VK_TEST (Arpeggiator_DivisionsAlterStepRate)
 {
     // Compare 1/16 vs 1/4: 1/16 should produce ~4x the note count of 1/4
