@@ -116,6 +116,24 @@ target_sources(VaporKey PRIVATE
     Source/Pages/MasterPage.cpp
 )
 
+# MSVC's UTC backend (cl.exe's optimizer) hits an internal compiler error
+# (C1001 in p2/main.cpp:258) when compiling WavetableShapes.cpp under /Ox.
+# The TU was always borderline; expanding the wavetable bank from 9 to 23
+# shape generators in one file (commit a859dbb) tipped it over. The shape
+# builders run once at synth init to fill 36 frames x 4096 samples, so
+# turning optimisation off on this TU is invisible at runtime - the inner
+# loops are O(N) and dominated by std::sin / std::fmod cost, not by the
+# inlining /Ox would buy us. Both VaporKey and VaporKeyTests pull
+# WavetableShapes.cpp in, hence the source-file-level property which
+# applies to every target it appears in.
+if(MSVC)
+    set_source_files_properties(
+        Source/WavetableShapes.cpp
+        PROPERTIES
+        COMPILE_OPTIONS /Od
+    )
+endif()
+
 target_compile_definitions(VaporKey PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
