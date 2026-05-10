@@ -1,4 +1,22 @@
 cmake_minimum_required(VERSION 3.22)
+
+# UseMultiToolTask=true forces MSBuild's CL task to fork a separate cl.exe
+# for every source file instead of batching all sources into one cl.exe
+# call (the Visual Studio generator default). With /MP stripped from JUCE
+# (see post-FetchContent block below) a single cl.exe was processing all
+# 26 VaporKey + 16 JUCE module sources serially in one process; cumulative
+# AST + optimizer state across ~42 JUCE-template-heavy TUs blew that one
+# process's heap and cl.exe died mid-c2 with exit code -529706956
+# (0xE06D7374, EXCEPTION_MSC_THROW_EXCEPTION - cl's internal bad_alloc).
+# Per-file cl.exe resets memory between TUs; concurrency stays under
+# cmake --build --parallel control. Must be set before project() so it
+# applies to all generated .vcxprojs.
+if(CMAKE_HOST_WIN32)
+    set(CMAKE_VS_GLOBALS
+        "UseMultiToolTask=true"
+        "EnforceProcessCountAcrossBuilds=true")
+endif()
+
 project(VaporKey VERSION 0.4.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
