@@ -17,26 +17,23 @@ option(VAPORKEY_LTO "Enable link-time optimization for the plugin" ON)
 # Per-target warning levels live on the targets below so JUCE's own
 # translation units don't get pulled into our stricter set.
 if(MSVC)
-    # /MP without an argument defaults to (CPU + 1) workers per project.
-    # Combined with MSBuild's project-level --parallel that floods the CI
-    # runner: on 4-core windows-2022 it's up to 5 cl.exe per project, and
-    # at --parallel 2 that's ~10 simultaneous cl.exe instances each
-    # holding 1.5-2 GB of JUCE template state. Peak RSS exceeds the
-    # runner's 16 GB and a child cl.exe is OOM-killed, which the parent
-    # reports as
+    # Do NOT enable /MP. MSBuild's project-level --parallel already gives
+    # us cross-project concurrency in CI; stacking /MP on top spawns
+    # per-project worker cl.exe pools that compound multiplicatively. On
+    # the 16 GB windows-2022 runner, JUCE-template-heavy TUs peak ~2 GB
+    # RSS each, so even /MP2 x --parallel 2 (= up to 4 concurrent cl.exe)
+    # is enough for one child to be OOM-killed, which the parent reports
+    # as
     #   cl : command line error D8040: error creating or communicating with child process
-    # The CloseTypeServerPDB stack frame is just where cl.exe was during
-    # shutdown; the underlying problem is process count, not the PDB
-    # server. Cap at 2 workers per project: with --parallel 2 the cl.exe
-    # pool stays at most 4 (~8 GB), well under the cap. Local builds give
-    # up some throughput vs. /MP=cores; developers who need more can pass
-    # /MPn through CXXFLAGS.
-    add_compile_options(/MP2)
+    # Without /MP, --parallel 2 keeps the live cl.exe count <= 2 (~4 GB),
+    # comfortably under the cap. Local builds lose per-project parallelism
+    # but MSBuild's project-level concurrency still drives the cores;
+    # developers who want /MP can opt in via CMAKE_CXX_FLAGS or CXXFLAGS.
+    #
     # /Z7 embeds debug info in .obj files instead of routing it through
-    # mspdbsrv.exe (the /Zi PDB type server). Defensive against a separate
-    # class of parallel-build failures (PRs #31/#32 chased PDB-server
-    # symptoms by refactoring TUs) even if the /MP cap above turns out to
-    # be sufficient on its own. Linker strips the embedded records when
+    # mspdbsrv.exe (the /Zi PDB type server). Cheap insurance against a
+    # separate class of parallel-build flakiness (PRs #31/#32 chased
+    # PDB-server symptoms); linker strips the embedded records when
     # /DEBUG isn't passed, so shipped Release binaries are unaffected.
     add_compile_options(/Z7)
 endif()
