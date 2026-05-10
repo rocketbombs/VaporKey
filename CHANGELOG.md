@@ -7,6 +7,14 @@ versions may break parameter or preset compatibility.
 ## [Unreleased]
 
 ### Added
+- **Cross-oscillator modulation (X-MOD).** Each oscillator can now use any
+  other oscillator (or none) as an FM source, ring modulator, or amplitude
+  modulator. The OSC page hosts an X-MOD matrix below the per-osc strips
+  with a source combo, mod-type combo, and amount slider per destination,
+  plus a small node-and-arrow diagram visualising the active routing. FM
+  uses pre-pan modulator output so depth is independent of the source's
+  level/pan settings; ring and AM operate on the post-mix signal.
+  Parameter ids: `oscN_mod_src`, `oscN_mod_type`, `oscN_mod_amt`.
 - **14 new factory wavetables.** The Basic / Saws / Squares / Vocal / Bell /
   Digital / Harmonic / Glass / Reso bank grew to 23 shapes:
   *Sync* (hard-sync sweep), *RingMod* (sine-product), *Wavefold* (symmetric
@@ -90,6 +98,55 @@ versions may break parameter or preset compatibility.
   to a message-thread-owned queue that drops them once their refcount
   shows the audio thread has moved on, so the heap deallocation never
   runs on the audio path.
+- Wavetable shape generators moved to their own translation unit
+  (`WavetableShapes.cpp`). The 23-shape bank lives there as 23 free
+  functions; `Wavetable.cpp` only owns the mip-map oscillator and the
+  library scaffold. The split was forced by an MSVC ICE in
+  `WavetableLibrary`'s old combined-TU constructor and turns out to be
+  the right factoring on its own merits.
+
+### Build / CI
+- **Windows builds switched to Ninja.** A multi-PR investigation
+  (#34–#37) traced a recurring `cl : command line error D8040: error
+  creating or communicating with child process` to MSBuild's CL task
+  layer: JUCE's `juce_recommended_config_flags` adds `/MP` (parallel
+  workers per cl invocation) which CMake's Visual Studio generator
+  translates into `<MultiProcessorCompilation>true</MultiProcessorCompilation>`,
+  on top of the project-level concurrency `cmake --parallel` already
+  drives. On the 4-core windows-2022 runner this stacked into ~8 cl.exe
+  workers each peaking ~2 GB RSS on JUCE-template-heavy TUs and one
+  child OOM-killed mid-compile. Stripping `/MP` from JUCE's interface
+  options exposed a separate "all sources passed to one cl.exe" memory
+  bloat; `UseMultiToolTask=true` exposed a third parallelism layer that
+  ignored `cmake --parallel`. Switching the generator to Ninja sidesteps
+  the entire MSBuild + CL task stack: each `.cpp` gets its own short-lived
+  `cl.exe`, `cmake --build --parallel` directly governs how many are alive,
+  no `/MP`, no batching, no MultiToolTask pool.
+- **`cl` switched to `/Z7` debug info.** Embeds debug records in the
+  `.obj` instead of routing through `mspdbsrv.exe`'s PDB type server,
+  which had its own class of parallel-build flakiness. Linker strips the
+  embedded records when `/DEBUG` isn't passed, so shipped Release
+  binaries are unaffected.
+- **`/MP` stripped from JUCE's `juce_recommended_config_flags`** at the
+  CMake level. Helpful for any local developer who keeps using the
+  Visual Studio generator; Ninja-based builds ignore it.
+- **`/Od` on `WavetableShapes.cpp` for MSVC.** The Ninja switch surfaced
+  the previously-masked underlying issue: cl.exe's UTC backend hits
+  `fatal error C1001: Internal compiler error` (`p2/main.cpp:258`) when
+  optimising the 23-shape generator pack under `/Ox`. Per-file `/Od`
+  works around the ICE; the shape builders run once at synth init to fill
+  36 frames × 4096 samples each, so the optimisation delta is invisible
+  at runtime.
+- **Windows Defender exclusions** for `$GITHUB_WORKSPACE`, the MSVC and
+  Windows Kits install dirs, and the build processes themselves
+  (`cl.exe`, `link.exe`, `cmake.exe`, `ninja.exe`). Defender can briefly
+  hold the `.obj` files cl is writing, which used to surface as
+  intermittent compiler-driver errors.
+- Cross-platform parallelism caps: Linux and Windows both build with
+  `--parallel 2` and `-DVAPORKEY_LTO=OFF` in CI to keep peak RSS under
+  the GitHub-hosted runners' 16 GB cap (LTO-linking JUCE +
+  `juce_dsp::Oversampling` + the plate reverb instantiations alone was
+  enough to push us over).
 
 ## [0.4.1] - 2026-05-08
 
