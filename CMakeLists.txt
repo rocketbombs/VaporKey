@@ -17,18 +17,27 @@ option(VAPORKEY_LTO "Enable link-time optimization for the plugin" ON)
 # Per-target warning levels live on the targets below so JUCE's own
 # translation units don't get pulled into our stricter set.
 if(MSVC)
-    add_compile_options(/MP)
-    # Embed debug info in .obj files (/Z7) instead of routing it through
-    # mspdbsrv.exe (the /Zi PDB type server). When MSBuild's project-level
-    # --parallel layers on top of cl.exe's per-project /MP pool, the type
-    # server saturates and the build aborts mid-compile with
+    # /MP without an argument defaults to (CPU + 1) workers per project.
+    # Combined with MSBuild's project-level --parallel that floods the CI
+    # runner: on 4-core windows-2022 it's up to 5 cl.exe per project, and
+    # at --parallel 2 that's ~10 simultaneous cl.exe instances each
+    # holding 1.5-2 GB of JUCE template state. Peak RSS exceeds the
+    # runner's 16 GB and a child cl.exe is OOM-killed, which the parent
+    # reports as
     #   cl : command line error D8040: error creating or communicating with child process
-    # PRs #31 and #32 patched the symptom (refactor whichever TU happened to
-    # tip the server over) but the underlying cl.exe<->mspdbsrv.exe contention
-    # was unchanged, so each new code addition risked re-triggering it. /Z7
-    # sidesteps the type server entirely. .obj files get bigger; the linker
-    # strips the debug records when /DEBUG isn't passed, so the shipped
-    # Release binaries are unaffected.
+    # The CloseTypeServerPDB stack frame is just where cl.exe was during
+    # shutdown; the underlying problem is process count, not the PDB
+    # server. Cap at 2 workers per project: with --parallel 2 the cl.exe
+    # pool stays at most 4 (~8 GB), well under the cap. Local builds give
+    # up some throughput vs. /MP=cores; developers who need more can pass
+    # /MPn through CXXFLAGS.
+    add_compile_options(/MP2)
+    # /Z7 embeds debug info in .obj files instead of routing it through
+    # mspdbsrv.exe (the /Zi PDB type server). Defensive against a separate
+    # class of parallel-build failures (PRs #31/#32 chased PDB-server
+    # symptoms by refactoring TUs) even if the /MP cap above turns out to
+    # be sufficient on its own. Linker strips the embedded records when
+    # /DEBUG isn't passed, so shipped Release binaries are unaffected.
     add_compile_options(/Z7)
 endif()
 

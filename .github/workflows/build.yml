@@ -17,9 +17,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Pluginval download URL pattern. Pinned to a specific tag so a pluginval
-# upstream regression can't silently break every build - bump intentionally
-# after verifying the new release locally.
+# Pluginval pinned to a specific tag so a pluginval upstream regression can't
+# silently break every build - bump intentionally after verifying locally.
+# Asset URL is /releases/download/<tag>/<asset> (the /releases/<tag>/download/
+# alias only works for the literal string "latest").
 env:
   PLUGINVAL_VERSION: v1.0.4
   PLUGINVAL_STRICTNESS: "5"
@@ -137,7 +138,7 @@ jobs:
       - name: Validate with pluginval
         shell: pwsh
         run: |
-          $url = "https://github.com/Tracktion/pluginval/releases/${env:PLUGINVAL_VERSION}/download/pluginval_Windows.zip"
+          $url = "https://github.com/Tracktion/pluginval/releases/download/${env:PLUGINVAL_VERSION}/pluginval_Windows.zip"
           Invoke-WebRequest -Uri $url -OutFile pluginval.zip
           Expand-Archive pluginval.zip -DestinationPath pluginval-bin -Force
           $exe = Get-ChildItem -Recurse -Path pluginval-bin -Filter "pluginval.exe" | Select-Object -First 1
@@ -172,18 +173,14 @@ jobs:
       - name: Build
         # VaporKey_All builds both VST3 and Standalone (the artefacts this job
         # uploads). Targeting it explicitly avoids rebuilding VaporKeyTests and
-        # VaporKeyPresetLint here - those already ran on Linux. --parallel 3
-        # mirrors the Windows/Linux caps so a future code growth doesn't push
-        # the macos-14 runner (3 cores, 14 GB) into the same OOM territory the
-        # other platforms hit; macOS has more headroom today but the ceiling
-        # is real.
-        run: cmake --build build --config Release --target VaporKey_All --parallel 3
+        # VaporKeyPresetLint here - those already ran on Linux.
+        run: cmake --build build --config Release --target VaporKey_All --parallel
 
       - name: Validate with pluginval
         run: |
           set -euo pipefail
           curl -fsSL -o pluginval.zip \
-            "https://github.com/Tracktion/pluginval/releases/${PLUGINVAL_VERSION}/download/pluginval_macOS.zip"
+            "https://github.com/Tracktion/pluginval/releases/download/${PLUGINVAL_VERSION}/pluginval_macOS.zip"
           unzip -q pluginval.zip
           ./pluginval.app/Contents/MacOS/pluginval \
             --strictness-level "${PLUGINVAL_STRICTNESS}" \
@@ -242,7 +239,7 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsSL -o pluginval.zip \
-            "https://github.com/Tracktion/pluginval/releases/${PLUGINVAL_VERSION}/download/pluginval_Linux.zip"
+            "https://github.com/Tracktion/pluginval/releases/download/${PLUGINVAL_VERSION}/pluginval_Linux.zip"
           unzip -q pluginval.zip
           chmod +x ./pluginval
           xvfb-run -a ./pluginval \
