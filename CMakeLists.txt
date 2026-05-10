@@ -5,6 +5,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Link-time optimization for the plugin. Default ON for local builds (release
+# binaries get the perf/size benefit); CI passes -DVAPORKEY_LTO=OFF because
+# LTO-linking the plugin (JUCE + juce_dsp Oversampling instantiations + plate
+# reverb) peaks well above the free GitHub runners' RAM.
+option(VAPORKEY_LTO "Enable link-time optimization for the plugin" ON)
+
 # Build-wide flags. We deliberately do NOT enable -ffast-math / /fp:fast: the
 # audio path relies on IEEE-754 semantics + juce::ScopedNoDenormals (see
 # PluginProcessor::processBlock) and per-stage denormal guards in FxChain.
@@ -94,9 +100,12 @@ target_link_libraries(VaporKey PRIVATE
     juce::juce_dsp
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
-    juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
+
+if(VAPORKEY_LTO)
+    target_link_libraries(VaporKey PRIVATE juce::juce_recommended_lto_flags)
+endif()
 
 # Stricter warnings on VaporKey's own sources only. juce_recommended_warning_flags
 # above provides the JUCE-blessed baseline; layering extras at the target scope
