@@ -94,6 +94,20 @@ versions may break parameter or preset compatibility.
   per-platform pluginval pass.
 
 ### Fixed
+- **Arp toggle no longer leaves a stuck note droning under the sequence.**
+  When the arp turned ON while a key was already held (its note-on having
+  passed through directly to the synth in OFF mode), the synth voice for
+  that key kept sustaining while the arp arpeggiated on top, because the
+  arp had no record of which notes pass-through had already started. The
+  arp now tracks the held set in *both* modes and, on the OFF -> ON
+  transition, emits matching note-offs so the synth releases those voices
+  before the arp takes over. Symmetrically, on the ON -> OFF transition
+  the arp re-emits note-ons for everything still physically held so the
+  synth picks those keys back up as direct voices (the arp had been
+  suppressing pass-through during the session). Latch is seeded from the
+  held set on OFF -> ON so a user who enables latch+arp while holding
+  keys gets the held chord latched, the same way it would behave if the
+  keys had been pressed after the arp turned on.
 - **Mono + legato now actually glides.** The previous flow set a "skip
   envelope retrigger" flag on the held voice and emitted a noteOff/noteOn
   pair, expecting the synth to land the new note on the same voice. JUCE's
