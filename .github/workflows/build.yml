@@ -1,11 +1,21 @@
 name: Build VaporKey
 
+# A push to a feature branch with an open PR used to fire this workflow
+# twice (once for `push`, once for `pull_request`). The push trigger is
+# now scoped to `main` and tags - PRs cover every other branch we care
+# about, so each commit produces a single run instead of two.
 on:
   push:
-    branches: [ main, "claude/**" ]
+    branches: [ main ]
     tags: [ "v*" ]
   pull_request:
   workflow_dispatch:
+
+# If a newer commit lands on the same ref, abandon the in-flight run and
+# start fresh. Stops a flurry of pushes from queueing up duplicate jobs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # Pluginval download URL pattern. Pinned by the user (bump as new pluginval
 # releases come out). 'latest' tracks the most recent stable release.
@@ -29,7 +39,7 @@ jobs:
             libwebkit2gtk-4.1-dev libglu1-mesa-dev mesa-common-dev libgtk-3-dev
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DVAPORKEY_LTO=OFF
 
       - name: Build lint tool
         run: cmake --build build --target VaporKeyPresetLint --parallel
@@ -62,7 +72,7 @@ jobs:
             xvfb
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DVAPORKEY_LTO=OFF
 
       - name: Build tests
         run: cmake --build build --target VaporKeyTests --parallel
@@ -91,14 +101,17 @@ jobs:
 
       - name: Configure
         shell: cmd
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DVAPORKEY_LTO=OFF
 
       - name: Build
         # VaporKey_All builds both VST3 and Standalone (the artefacts this job
         # uploads). Targeting it explicitly avoids rebuilding VaporKeyTests and
-        # VaporKeyPresetLint here - those already ran on Linux.
+        # VaporKeyPresetLint here - those already ran on Linux. --parallel 2
+        # caps MSBuild project-level concurrency so the VST3 and Standalone
+        # links don't both run /MP-parallel cl.exe pools at once and OOM-kill
+        # the runner.
         shell: cmd
-        run: cmake --build build --config Release --target VaporKey_All --parallel
+        run: cmake --build build --config Release --target VaporKey_All --parallel 2
 
       - name: Locate VST3
         id: locate
@@ -148,7 +161,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+        run: cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -DVAPORKEY_LTO=OFF
 
       - name: Build
         # VaporKey_All builds both VST3 and Standalone (the artefacts this job
@@ -197,15 +210,19 @@ jobs:
             xvfb
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DVAPORKEY_LTO=OFF
 
       - name: Build
-        # VaporKey_All builds both VST3 and Standalone (the artefacts this job
-        # uploads). Targeting it explicitly avoids re-compiling VaporKeyTests
-        # and VaporKeyPresetLint here - those targets each pull in their own
-        # copy of JUCE (incl. harfbuzz), and four independent JUCE compiles
-        # running in parallel will OOM-kill a default 7 GB Linux runner.
-        run: cmake --build build --target VaporKey_All --parallel
+        # VaporKey_All builds both VST3 and Standalone (the artefacts this
+        # job uploads). Targeting it explicitly avoids re-compiling
+        # VaporKeyTests / VaporKeyPresetLint here - those targets each pull
+        # in their own copy of JUCE (incl. harfbuzz), and four independent
+        # JUCE compiles in parallel will OOM-kill the runner. --parallel 2
+        # plus -DVAPORKEY_LTO=OFF (set above) keep peak memory comfortably
+        # under the runner's RAM cap; the previous flat `--parallel` plus
+        # LTO link of the post-oversampling/plate-reverb plugin was enough
+        # to push us over.
+        run: cmake --build build --target VaporKey_All --parallel 2
 
       - name: Validate with pluginval
         # Linux runners have no display; pluginval instantiates the editor, so
