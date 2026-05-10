@@ -17,19 +17,6 @@ option(VAPORKEY_LTO "Enable link-time optimization for the plugin" ON)
 # Per-target warning levels live on the targets below so JUCE's own
 # translation units don't get pulled into our stricter set.
 if(MSVC)
-    # Do NOT enable /MP. MSBuild's project-level --parallel already gives
-    # us cross-project concurrency in CI; stacking /MP on top spawns
-    # per-project worker cl.exe pools that compound multiplicatively. On
-    # the 16 GB windows-2022 runner, JUCE-template-heavy TUs peak ~2 GB
-    # RSS each, so even /MP2 x --parallel 2 (= up to 4 concurrent cl.exe)
-    # is enough for one child to be OOM-killed, which the parent reports
-    # as
-    #   cl : command line error D8040: error creating or communicating with child process
-    # Without /MP, --parallel 2 keeps the live cl.exe count <= 2 (~4 GB),
-    # comfortably under the cap. Local builds lose per-project parallelism
-    # but MSBuild's project-level concurrency still drives the cores;
-    # developers who want /MP can opt in via CMAKE_CXX_FLAGS or CXXFLAGS.
-    #
     # /Z7 embeds debug info in .obj files instead of routing it through
     # mspdbsrv.exe (the /Zi PDB type server). Cheap insurance against a
     # separate class of parallel-build flakiness (PRs #31/#32 chased
@@ -46,6 +33,33 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(JUCE)
+
+# JUCE 8.0.4's juce_recommended_config_flags adds bare /MP to its
+# INTERFACE_COMPILE_OPTIONS for MSVC. CMake's Visual Studio generator
+# translates that to <MultiProcessorCompilation>true</MultiProcessorCompilation>
+# in every generated .vcxproj, which makes each cl.exe invocation fork
+# N=NUMBER_OF_PROCESSORS worker subprocesses - on the 4-core windows-2022
+# runner that's 4 cl workers per cl.exe. Combined with cmake --parallel,
+# JUCE-template-heavy TUs peak ~2 GB RSS each and exceed the runner's
+# 16 GB cap; one worker is OOM-killed and the parent reports
+#   cl : command line error D8040: error creating or communicating with child process
+# Earlier fix attempts that just removed VaporKey's own /MP from
+# CMakeLists.txt (PRs #34, #35, #36) didn't help because JUCE's /MP
+# survived transitively via target_link_libraries(... juce_recommended_config_flags).
+# Strip it at the source so the named property never lands in the .vcxproj
+# and cl.exe runs single-process. cmake --build --parallel governs all
+# concurrency from here.
+if(MSVC AND TARGET juce_recommended_config_flags)
+    get_target_property(_juce_cfg_opts juce_recommended_config_flags INTERFACE_COMPILE_OPTIONS)
+    if(_juce_cfg_opts)
+        # JUCE 8.0.4 stores the option as a generator expression of the
+        # form $<$<STREQUAL:"MSVC","MSVC">:/MP> (after CMAKE_CXX_COMPILER_ID
+        # is expanded at parse time). Match anything ending in /MP or /MP>.
+        list(FILTER _juce_cfg_opts EXCLUDE REGEX "[/-]MP>?$")
+        set_target_properties(juce_recommended_config_flags PROPERTIES
+            INTERFACE_COMPILE_OPTIONS "${_juce_cfg_opts}")
+    endif()
+endif()
 
 juce_add_plugin(VaporKey
     COMPANY_NAME              "RocketBombs"
