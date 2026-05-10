@@ -29,12 +29,19 @@ private:
     std::unique_ptr<LevelMeter> meter;
     std::unique_ptr<Scope>      scope;
     juce::ListBox presetList;
+    juce::ListBox categoryList;
+    juce::TextEditor searchField;
     juce::TextButton prevBtn { "<  PREV" }, nextBtn { "NEXT  >" };
     juce::TextButton saveBtn { "SAVE" }, renameBtn { "RENAME" }, deleteBtn { "DELETE" };
     juce::TextEditor nameField;
     juce::Label presetLabel, presetNowLabel, nameLabel, brand, tagline, copy;
-    juce::ComboBox categoryFilter;
-    juce::Label    categoryLabel;
+    juce::Label categoryLabel, searchLabel, countLabel;
+
+    // Category sidebar selection: 0 = All, 1..NumCategories = factory category
+    // (category index = sel - 1), NumCategories+1 = User. Replaces the prior
+    // categoryFilter ComboBox; the int still drives rebuildVisible().
+    int categorySelection { 0 };
+    juce::String searchQuery;
 
     class PresetListModel : public juce::ListBoxModel
     {
@@ -46,11 +53,29 @@ private:
     private:
         MasterPage& owner;
     };
-    std::unique_ptr<PresetListModel> presetModel;
+
+    class CategoryListModel : public juce::ListBoxModel
+    {
+    public:
+        explicit CategoryListModel (MasterPage& o) : owner (o) {}
+        int getNumRows() override;
+        void paintListBoxItem (int row, juce::Graphics&, int width, int height, bool selected) override;
+        void listBoxItemClicked (int row, const juce::MouseEvent&) override;
+    private:
+        MasterPage& owner;
+    };
+
+    std::unique_ptr<PresetListModel>   presetModel;
+    std::unique_ptr<CategoryListModel> categoryModel;
 
     void onSave();
     void onRename();
     void onDelete();
     void stepPreset (int dir);
     void showStatus (const juce::String& msg, juce::Colour col);
+    void setCategorySelection (int sel);
+    void updateCountLabel();
+    bool entryMatchesFilter (const PresetEntry& e) const;
+    int  countForCategory (int sel) const;
+    juce::StringArray categoryButtonLabels() const;
 };

@@ -7,6 +7,32 @@ versions may break parameter or preset compatibility.
 ## [Unreleased]
 
 ### Added
+- **Factory preset bank rebuilt at 170 patches.** The 57-preset starter
+  bank grew to 170 presets across Bass (21), Lead (24), Pad (24),
+  Pluck (19), Keys (21), Bell (14), FX (22), and Arp (25), with every
+  original preset preserved by name and content for backward
+  compatibility. The new patches were authored to systematically exercise
+  every corner of the engine: every wavetable shape (including the v0.5
+  additions Sync / RingMod / Wavefold / Vowels / Choir / Whisper / Organ /
+  Pluck / Sawteeth / Even-Odd / Tine / Mallet / FM Stack / Bitcrush),
+  every X-MOD type (FM / Ring / AM) on every routing, every distortion
+  type (Soft / Hard / Fold / Bit), every filter mode (LP / BP / HP) plus
+  key tracking and velocity, all four macros pre-wired to mod
+  destinations, mod-wheel and aftertouch assignments, LFO tempo-sync
+  divisions, pitch envelope (positive *and* negative semitone offsets),
+  compressor on/off, mono+legato glide, and arp variations covering all
+  six modes plus latch and swing. The preset linter (`VaporKeyPresetLint`)
+  validates every value in CI against the parameter registry, and the
+  audio regression suite renders the full bank end-to-end.
+- **Two-pane preset browser.** The Master page replaces the prior
+  single-combo category filter with a vertical category sidebar
+  (All / Bass / Lead / Pad / Pluck / Keys / Bell / FX / Arp / User) that
+  shows the live filtered count next to each entry, and adds a name
+  search field that filters the list as you type (case-insensitive
+  substring match). A "Showing N / M" chip in the header keeps the size
+  of the current view visible at a glance. Prev/Next, Save / Rename /
+  Delete, and the now-playing label all operate over the filtered view,
+  so navigating by category or text query is transparent.
 - **Cross-oscillator modulation (X-MOD).** Each oscillator can now use any
   other oscillator (or none) as an FM source, ring modulator, or amplitude
   modulator. The OSC page hosts an X-MOD matrix below the per-osc strips

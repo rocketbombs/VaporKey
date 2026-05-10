@@ -16,7 +16,8 @@ FX chain — wrapped in a single audio-reactive editor.
 - **VST3** plugin and **Standalone** application
 - **Windows / macOS (universal) / Linux**
 - **16-voice** polyphony with optional mono / legato / glide
-- **57 factory presets** across Bass, Lead, Pad, Pluck, Keys, Bell, FX, Arp
+- **170 factory presets** across Bass, Lead, Pad, Pluck, Keys, Bell, FX, Arp,
+  browsable from a sidebar of category buttons with a live name search
 - **Realtime-safe** audio path — no allocations, locks, or I/O in `processBlock`
   (see [docs/RealtimeSafety.md](docs/RealtimeSafety.md))
 - **Validated** on every push by a three-stage CI gate: a JSON preset linter
@@ -88,10 +89,20 @@ FX chain — wrapped in a single audio-reactive editor.
 - Mod wheel and aftertouch routed through the same per-block mod sum as the macros
 
 **Presets**
+- 170 factory patches authored to exercise every corner of the engine:
+  every wavetable shape, every distortion type and filter mode, X-MOD FM /
+  ring / AM routings, sub + noise blends, all four macros pre-wired to
+  destinations, mod-wheel / aftertouch assignments, LFO sync divisions,
+  pitch envelope, comp on / off, mono+legato glide, and arp variations
+  across all six modes.
 - Factory presets live in [`Source/Presets.json`](Source/Presets.json) and
   are baked into the binary at build time — fork the JSON to add your own.
 - User presets are saved under the system app-data directory:
   `RocketBombs/VaporKey/Presets`.
+- The Master page hosts a two-pane browser: a category sidebar (All / 8
+  factory categories / User, with per-category counts) and a name-search
+  field that filters live as you type. Prev/Next steps through the
+  currently filtered view.
 
 ---
 
