@@ -104,19 +104,51 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Windows Defender realtime scanning briefly holds .obj files as cl.exe
+      # writes them, which has been one source of intermittent CI flakiness.
+      # Excluding the workspace, MSVC toolchain dirs, and the build processes
+      # themselves removes that interference without disabling Defender
+      # system-wide. Add-MpPreference needs the elevated shell GitHub-hosted
+      # runners already provide.
+      - name: Exempt build paths from Defender realtime scan
+        shell: pwsh
+        run: |
+          Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE"
+          Add-MpPreference -ExclusionPath "C:\Program Files\Microsoft Visual Studio"
+          Add-MpPreference -ExclusionPath "C:\Program Files (x86)\Microsoft Visual Studio"
+          Add-MpPreference -ExclusionPath "C:\Program Files (x86)\Windows Kits"
+          Add-MpPreference -ExclusionProcess "cl.exe"
+          Add-MpPreference -ExclusionProcess "link.exe"
+          Add-MpPreference -ExclusionProcess "cmake.exe"
+          Add-MpPreference -ExclusionProcess "ninja.exe"
+
+      # Set up the MSVC environment (cl.exe in PATH, INCLUDE, LIB, etc.) for
+      # all subsequent steps in this job. ilammy/msvc-dev-cmd is the standard
+      # GH-Actions wrapper around vcvars64.bat.
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # Use Ninja instead of the Visual Studio MSBuild generator. PRs #34-#39
+      # chased a long string of D8040 / MSB6006 cl.exe crashes that all traced
+      # back to MSBuild's CL task: /MP injected by JUCE's
+      # juce_recommended_config_flags, batched cl.exe invocations holding
+      # cumulative AST state, UseMultiToolTask's separate parallelism layer
+      # ignoring --parallel. Ninja sidesteps that entire stack: each .cpp gets
+      # its own cl.exe, --parallel directly controls the live cl count, no
+      # /MP, no MSBuild pool. windows-2022 ships ninja preinstalled.
       - name: Configure
         shell: cmd
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DVAPORKEY_LTO=OFF
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVAPORKEY_LTO=OFF
 
       - name: Build
         # VaporKey_All builds both VST3 and Standalone (the artefacts this job
         # uploads). Targeting it explicitly avoids rebuilding VaporKeyTests and
         # VaporKeyPresetLint here - those already ran on Linux. --parallel 2
-        # caps MSBuild project-level concurrency so the VST3 and Standalone
-        # links don't both run /MP-parallel cl.exe pools at once and OOM-kill
-        # the runner.
+        # caps live cl.exe at 2 (~4 GB peak on JUCE-template-heavy TUs), well
+        # under the runner's 16 GB cap.
         shell: cmd
-        run: cmake --build build --config Release --target VaporKey_All --parallel 2
+        run: cmake --build build --target VaporKey_All --parallel 2
 
       - name: Locate VST3
         id: locate
