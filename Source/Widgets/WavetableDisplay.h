@@ -12,6 +12,7 @@ class WavetableDisplay : public juce::Component,
 {
 public:
     WavetableDisplay (VaporKeyAudioProcessor& proc, int oscIndex);
+    ~WavetableDisplay() override { stopTimer(); }
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
@@ -22,8 +23,12 @@ public:
     void fileDragExit  (const juce::StringArray&) override;
     void filesDropped  (const juce::StringArray& files, int x, int y) override;
 
+    void visibilityChanged() override      { syncTimerToVisibility(); }
+    void parentHierarchyChanged() override { syncTimerToVisibility(); }
+
 private:
     void timerCallback() override { repaint(); }
+    void syncTimerToVisibility();
     void setPositionFromMouse (const juce::MouseEvent& e);
     void showLoadMenu();
     void chooseWavFile();

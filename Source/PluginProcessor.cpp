@@ -1,7 +1,52 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "Presets.h"
 #include "PresetStore.h"
 #include "WavetableImport.h"
+
+#include <mutex>
+#include <thread>
+
+namespace
+{
+    // Kicks the two heavy Meyers singletons (WavetableLibrary - 23 FFT-built
+    // mip-mapped tables; VKPresets factory JSON parse) onto a background
+    // thread on the very first plugin construction.
+    //
+    // Why this exists: with the synchronous get() call living inside the
+    // constructor, the host's message thread would block for the full init
+    // duration whenever the .dll's static singletons were touched for the
+    // first time - and would do so AGAIN serially per instance if the host
+    // happened to construct several at once. Pulling the work onto a worker
+    // thread lets the message thread queue up multiple constructors in
+    // parallel; by the time any of them reaches prepareToPlay (which blocks
+    // on the same static-init mutex) the warmer has typically completed and
+    // the wait is zero.
+    //
+    // C++11 magic statics make WavetableLibrary::get() / VKPresets::all()
+    // intrinsically thread-safe: whichever thread enters static init first
+    // runs the body; any other thread that touches it blocks on the same
+    // mutex. The warmer thread is detached because its only side effect is
+    // populating those (program-lifetime) singletons; if the host unloads
+    // the .dll while the warmer is still running the OS terminates the
+    // thread along with the rest of the module.
+    void kickSingletonWarmerOnce()
+    {
+        static std::once_flag flag;
+        std::call_once (flag, []
+        {
+            std::thread ([]
+            {
+                try
+                {
+                    WavetableLibrary::get();
+                    (void) VKPresets::all();
+                }
+                catch (...) {}
+            }).detach();
+        });
+    }
+}
 
 VaporKeyAudioProcessor::VaporKeyAudioProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Out", juce::AudioChannelSet::stereo(), true)),
@@ -11,11 +56,22 @@ VaporKeyAudioProcessor::VaporKeyAudioProcessor()
       fx (synthParams)
 {
     Parameters::cache (synthParams, apvts);
-    WavetableLibrary::get();
+
+    // The previous version blocked the message thread here until the entire
+    // wavetable library had finished generating. The warmer below runs that
+    // work in parallel, and prepareToPlay below joins on completion before
+    // any audio block can ask the audio thread to touch the library.
+    kickSingletonWarmerOnce();
 }
 
 void VaporKeyAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    // prepareToPlay is invoked on the message thread by every JUCE-supported
+    // host before processBlock starts. Blocking here is the right place to
+    // join on the warmer: the audio thread isn't running yet, and we
+    // guarantee that voices never trigger static-init on the audio path.
+    WavetableLibrary::get();
+
     sr = sampleRate;
     engine.prepare (sampleRate, samplesPerBlock);
     arp.prepare (sampleRate);

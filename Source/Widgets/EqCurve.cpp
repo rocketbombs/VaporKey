@@ -19,8 +19,16 @@ namespace {
 
 EqCurve::EqCurve (juce::AudioProcessorValueTreeState& s) : apvts (s)
 {
-    startTimerHz (30);
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    // Timer is started lazily by visibilityChanged so a hidden FX tab doesn't
+    // keep recomputing the magnitude curve.
+}
+
+void EqCurve::syncTimerToVisibility()
+{
+    const bool shouldRun = isShowing();
+    if (shouldRun && ! isTimerRunning())  startTimerHz (30);
+    else if (! shouldRun && isTimerRunning()) stopTimer();
 }
 
 juce::Rectangle<float> EqCurve::plotArea() const
