@@ -8,16 +8,20 @@ class EqCurve : public juce::Component, private juce::Timer
 {
 public:
     explicit EqCurve (juce::AudioProcessorValueTreeState& s);
+    ~EqCurve() override { stopTimer(); }
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp   (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
+    void visibilityChanged() override      { syncTimerToVisibility(); }
+    void parentHierarchyChanged() override { syncTimerToVisibility(); }
 
 private:
     enum Node { NodeNone = -1, NodeLow = 0, NodeMid, NodeHigh };
 
     void timerCallback() override { repaint(); }
+    void syncTimerToVisibility();
 
     juce::Rectangle<float> plotArea() const;
     float xForFreq (float hz, juce::Rectangle<float> r) const;

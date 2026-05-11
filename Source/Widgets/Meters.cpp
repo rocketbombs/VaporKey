@@ -7,7 +7,16 @@ using namespace VK;
 LevelMeter::LevelMeter (VaporKeyAudioProcessor& p) : processor (p)
 {
     setInterceptsMouseClicks (false, false);
-    startTimerHz (45);
+    // Timer is started by visibilityChanged once the meter is actually on
+    // screen; that avoids 45 Hz callbacks on every hidden-tab / closed-editor
+    // instance running in the host process.
+}
+
+void LevelMeter::syncTimerToVisibility()
+{
+    const bool shouldRun = isShowing();
+    if (shouldRun && ! timerActive)      { startTimerHz (45); timerActive = true; }
+    else if (! shouldRun && timerActive) { stopTimer();       timerActive = false; }
 }
 
 void LevelMeter::timerCallback()
@@ -93,7 +102,14 @@ void LevelMeter::paint (juce::Graphics& g)
 Scope::Scope (VaporKeyAudioProcessor& p) : processor (p)
 {
     setInterceptsMouseClicks (false, false);
-    startTimerHz (30);
+    // Started lazily by visibilityChanged - see LevelMeter for rationale.
+}
+
+void Scope::syncTimerToVisibility()
+{
+    const bool shouldRun = isShowing();
+    if (shouldRun && ! timerActive)      { startTimerHz (30); timerActive = true; }
+    else if (! shouldRun && timerActive) { stopTimer();       timerActive = false; }
 }
 
 void Scope::paint (juce::Graphics& g)

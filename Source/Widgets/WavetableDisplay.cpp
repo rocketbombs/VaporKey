@@ -9,7 +9,14 @@ WavetableDisplay::WavetableDisplay (VaporKeyAudioProcessor& proc, int oscIndex)
 {
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
     setOpaque (false);
-    startTimerHz (24);
+    // Timer is started lazily once we're actually showing.
+}
+
+void WavetableDisplay::syncTimerToVisibility()
+{
+    const bool shouldRun = isShowing();
+    if (shouldRun && ! isTimerRunning())      startTimerHz (24);
+    else if (! shouldRun && isTimerRunning()) stopTimer();
 }
 
 bool WavetableDisplay::isInterestedInFileDrag (const juce::StringArray& files)
