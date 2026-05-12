@@ -11,6 +11,17 @@ FX chain — wrapped in a single audio-reactive editor.
 
 ---
 
+## Demo
+
+A short track built from six instances of VaporKey plus drums:
+
+<video src="https://github.com/rocketbombs/VaporKey/releases/download/v0.5.0/VaporDemo.mp4" controls width="640"></video>
+
+If the embedded player doesn't show in your viewer, grab the file directly:
+[VaporDemo.mp4](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.0/VaporDemo.mp4).
+
+---
+
 ## At a glance
 
 - **VST3** plugin and **Standalone** application
@@ -111,15 +122,16 @@ FX chain — wrapped in a single audio-reactive editor.
 ### Prebuilt (recommended)
 
 Every push builds and validates VST3 + Standalone for Windows, macOS, and
-Linux. Grab the latest from the
-[Actions tab](https://github.com/rocketbombs/VaporKey/actions) or, for
-tagged releases, the [Releases page](https://github.com/rocketbombs/VaporKey/releases).
+Linux. Direct downloads for the current tagged release (v0.5.0) are below;
+the [Actions tab](https://github.com/rocketbombs/VaporKey/actions) hosts
+per-push builds and the [Releases page](https://github.com/rocketbombs/VaporKey/releases)
+hosts every tagged version.
 
-| Platform | Drop the `.vst3` here |
-|----------|-----------------------|
-| Windows  | `C:\Program Files\Common Files\VST3\` |
-| macOS    | `~/Library/Audio/Plug-Ins/VST3/` |
-| Linux    | `~/.vst3/` |
+| Platform | Download | Drop the `.vst3` here |
+|----------|----------|-----------------------|
+| Windows  | [VaporKey-0.5.0-Windows.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.0/VaporKey-0.5.0-Windows.zip) | `C:\Program Files\Common Files\VST3\` |
+| macOS    | [VaporKey-0.5.0-macOS.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.0/VaporKey-0.5.0-macOS.zip)   | `~/Library/Audio/Plug-Ins/VST3/` |
+| Linux    | [VaporKey-0.5.0-Linux.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.0/VaporKey-0.5.0-Linux.zip)   | `~/.vst3/` |
 
 On macOS, clear the quarantine attribute after copying so the host will load it:
 
