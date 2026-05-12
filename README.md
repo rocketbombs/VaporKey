@@ -14,10 +14,6 @@ FX chain — wrapped in a single audio-reactive editor.
 ## Demo
 
 A short track built from six instances of VaporKey plus drums:
-
-<video src="https://github.com/rocketbombs/VaporKey/releases/download/v0.5.0/VaporDemo.mp4" controls width="640"></video>
-
-If the embedded player doesn't show in your viewer, grab the file directly:
 [VaporDemo.mp4](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.0/VaporDemo.mp4).
 
 ---
