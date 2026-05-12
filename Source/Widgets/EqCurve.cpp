@@ -17,18 +17,39 @@ namespace {
     constexpr float kHitRadius  = 18.0f;
 }
 
+const juce::StringArray& EqCurve::watchedParamIds()
+{
+    static const juce::StringArray ids { "eq_low", "eq_mid", "eq_mid_freq", "eq_high" };
+    return ids;
+}
+
 EqCurve::EqCurve (juce::AudioProcessorValueTreeState& s) : apvts (s)
 {
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
-    // Timer is started lazily by visibilityChanged so a hidden FX tab doesn't
-    // keep recomputing the magnitude curve.
+
+    // Repaint reactively when any EQ parameter changes - covers user drags,
+    // host automation, preset loads, and undo. The previous 30 Hz polling
+    // Timer depended on visibilityChanged/parentHierarchyChanged firing at
+    // the right moment to start/stop; on tab-switch the start sometimes
+    // missed and the curve stayed frozen until the next forced repaint.
+    for (const auto& id : watchedParamIds())
+        apvts.addParameterListener (id, this);
 }
 
-void EqCurve::syncTimerToVisibility()
+EqCurve::~EqCurve()
 {
-    const bool shouldRun = isShowing();
-    if (shouldRun && ! isTimerRunning())  startTimerHz (30);
-    else if (! shouldRun && isTimerRunning()) stopTimer();
+    for (const auto& id : watchedParamIds())
+        apvts.removeParameterListener (id, this);
+}
+
+void EqCurve::parameterChanged (const juce::String&, float)
+{
+    // Listeners may fire on the audio thread; bounce to the message thread.
+    juce::MessageManager::callAsync (
+        [safeThis = juce::Component::SafePointer<EqCurve> (this)]
+        {
+            if (auto* c = safeThis.getComponent()) c->repaint();
+        });
 }
 
 juce::Rectangle<float> EqCurve::plotArea() const

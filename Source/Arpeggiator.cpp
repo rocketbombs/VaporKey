@@ -67,7 +67,14 @@ void Arpeggiator::process (juce::MidiBuffer& midi, int numSamples, double curren
     // pass-through, so `held` always reflects what the user is physically
     // holding and the OFF -> ON transition can silence the synth voices that
     // pass-through left ringing.
-    auto applyHeldNoteEvent = [this, latch] (const juce::MidiMessage& msg)
+    //
+    // The first note of a fresh phrase (empty -> non-empty held transition,
+    // arp on, no latched chord) realigns the step grid to the press: the
+    // arp's internal countdown had been free-ticking through the silence so
+    // a press landing mid-cycle would queue the first note up to a full
+    // stepSamples later. Realigning makes the first note land on the press
+    // instead of "wherever the silent grid happened to be".
+    auto applyHeldNoteEvent = [this, on, latch] (const juce::MidiMessage& msg)
     {
         if (msg.isNoteOn())
         {
@@ -75,6 +82,8 @@ void Arpeggiator::process (juce::MidiBuffer& midi, int numSamples, double curren
             // start a new chord (clear latched buffer first).
             if (latch && held.isEmpty())
                 latched.clearQuick();
+
+            const bool wasInactive = on && held.isEmpty() && latched.isEmpty();
 
             const int n = msg.getNoteNumber();
             for (int j = held.size(); --j >= 0;)
@@ -86,6 +95,13 @@ void Arpeggiator::process (juce::MidiBuffer& midi, int numSamples, double curren
                 for (int j = latched.size(); --j >= 0;)
                     if (latched.getReference (j).note == n) latched.remove (j);
                 latched.add ({ n, msg.getVelocity() });
+            }
+
+            if (wasInactive)
+            {
+                samplesToStep = 0.0;
+                stepIdx = 0;
+                octOffset = 0;
             }
         }
         else if (msg.isNoteOff())
@@ -107,10 +123,12 @@ void Arpeggiator::process (juce::MidiBuffer& midi, int numSamples, double curren
             pass.addEvent (juce::MidiMessage::noteOff (currentChan, currentNote), 0);
         currentNote = -1;
         samplesToOff = -1;
-        // Defer the first step by one full cycle on power-on so step 0 fires
-        // strictly after the chord is registered (matches the rest of the
-        // sequence: chord visible, then step, not the other way round).
-        samplesToStep = on ? stepSamples : 0.0;
+        // Restart the grid from zero on either transition so the first step
+        // lands on the chord rather than waiting up to a full stepSamples for
+        // the free-ticking countdown to roll over. (The previous code deferred
+        // by a full stepSamples on power-on, which was perceptible as latency
+        // - up to 0.5 s at 1/4 + 120 BPM - and felt off the beat.)
+        samplesToStep = 0.0;
         stepIdx = 0;
         octOffset = 0;
 
@@ -282,9 +300,16 @@ void Arpeggiator::process (juce::MidiBuffer& midi, int numSamples, double curren
                                        samplesToInputEvent,
                                        samplesToOffD });
 
-        cursor += (int) dt;
+        // Advance the integer cursor by the nearest sample (rather than
+        // truncating). Truncation introduced a per-step quantisation error
+        // biased one direction, which accumulated as audible drift relative
+        // to the host beat over long sessions. Rounding keeps each step's
+        // sample placement to within 0.5 sample of its real-time position.
+        const int dtSamples = juce::jlimit (0, numSamples - cursor,
+                                            (int) std::lround (dt));
+        cursor += dtSamples;
         samplesToStep -= dt;
-        if (samplesToOff >= 0) samplesToOff -= (int) dt;
+        if (samplesToOff >= 0) samplesToOff -= dtSamples;
 
         // Fire scheduled note-off if it's now due.
         if (samplesToOff == 0 && currentNote >= 0)

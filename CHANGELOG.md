@@ -6,6 +6,55 @@ versions may break parameter or preset compatibility.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-12
+
+Point release: targeted fixes for two regressions reported after the 0.5.0
+end-user round. No parameter, preset, or state-format changes - 0.5.0 sessions
+load and sound identical.
+
+### Fixed
+- **EQ curve no longer freezes until you switch tabs.** The 3-band EQ display
+  was driven by a 30 Hz `Timer` that was started/stopped in
+  `visibilityChanged` / `parentHierarchyChanged` based on `isShowing()` (added
+  in the multi-instance perf pass alongside the editor's cached backdrop
+  image). On some tab-switch sequences the timer didn't restart when the FX
+  tab came back into view, so dragging the L / M / H nodes updated the
+  underlying parameter but the curve drawn on top stayed stuck on its old
+  shape until a forced repaint (leaving and returning to the tab). Replaced
+  the polling timer with `AudioProcessorValueTreeState::addParameterListener`
+  on `eq_low` / `eq_mid` / `eq_mid_freq` / `eq_high`; the curve now repaints
+  reactively the moment any of those four values changes - covers drags,
+  host automation, preset loads, and undo - and there's no polling cost or
+  visibility race left to get wrong. Same pattern the X-MOD routing diagram
+  already uses.
+- **Arp first note lands on the press instead of up to a full step later.**
+  On the OFF -> ON transition the arp set its internal step countdown
+  (`samplesToStep`) to a full `stepSamples` so step 0 would fire "strictly
+  after the chord is registered". In practice that defer is up to 0.5 s at
+  1/4 + 120 BPM and is clearly perceptible as latency - the chord is up but
+  the arp sits silent for half a second before the first note. The arp also
+  let the grid free-tick through silence, so even mid-session, releasing
+  every key and pressing again would land the new phrase's first note
+  wherever the silent grid happened to be - a variable 0 to `stepSamples`
+  delay relative to the press. The transition now resets `samplesToStep` to
+  zero (first step fires on the press itself), and the empty-held to
+  non-empty-held edge inside the same arp cycle also resets the grid so
+  fresh phrases always start on the press. Latched phrases are unaffected
+  (latch holds the chord active, so the empty-edge never fires).
+- **Arp step placement no longer drifts relative to host beats.** The
+  per-iteration cursor advance used `(int) dt` truncation while
+  `samplesToStep` retained full double precision. `dt` is only ever
+  fractional when the step boundary itself is the smallest event in the
+  iteration (input events and sample offsets are integers by construction),
+  so the truncation systematically pulled each step's note placement 0..1
+  samples earlier than its real-time position. The bias is one-directional
+  and accumulates as steady drift against the host beat - small per-step
+  (sub-millisecond) but audible over long sessions (~6 ms after 1000 steps
+  at 1/16 + 120 BPM). Switched the cursor advance to `std::lround (dt)`,
+  bounded to the remaining samples in the block: the rounding error is now
+  zero-mean instead of one-sided, so drift no longer accumulates and each
+  step's note lands within 0.5 sample of its real-time position.
+
 ## [0.5.0] - 2026-05-10
 
 The 0.5 cycle is the first release with the expanded 23-shape wavetable bank,
