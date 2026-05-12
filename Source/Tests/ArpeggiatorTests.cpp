@@ -71,19 +71,20 @@ VK_TEST (Arpeggiator_OnEmitsSequencedSteps)
     // many short blocks and collect events.
     juce::MidiBuffer mb = pressChord ({ 60, 64, 67 });
     h.arp.process (mb, 32, 120.0);
-    auto pressEvents = collectNoteEvents (mb);
-    juce::ignoreUnused (pressEvents);
+
+    // Step 0 lands on the press (no defer); collect that too.
+    std::vector<MidiNoteEvent> all;
+    for (auto& e : collectNoteEvents (mb)) all.push_back (e);
 
     // Drive long enough to see at least 4 steps.
     int blocks = (int) std::ceil (4.0 * 0.5 * h.sr / 256.0) + 4;
-    std::vector<MidiNoteEvent> all;
     for (int b = 0; b < blocks; ++b)
     {
         juce::MidiBuffer m;
         h.arp.process (m, 256, 120.0);
         for (auto& e : collectNoteEvents (m))
         {
-            e.sample += b * 256; // make sample positions globally meaningful
+            e.sample += 32 + b * 256; // make sample positions globally meaningful
             all.push_back (e);
         }
     }
@@ -112,18 +113,27 @@ VK_TEST (Arpeggiator_UpModeStepsAscending)
     setParameter (h.tp, "arp_octaves", 1.0f);
     setParameter (h.tp, "arp_gate", 0.5f);
 
+    // First call carries step 0 (fired on press). Collect it alongside the
+    // events from subsequent blocks so the ordered-mode assertions see the
+    // full sequence starting at index 0.
+    auto collectIntoSequence = [] (const juce::MidiBuffer& m, std::vector<int>& dst)
+    {
+        for (auto& e : collectNoteEvents (m))
+            if (e.isOn) dst.push_back (e.note);
+    };
+
     juce::MidiBuffer chordIn = pressChord ({ 60, 64, 67 });
     h.arp.process (chordIn, 32, 120.0);
 
     std::vector<int> noteOnSequence;
+    collectIntoSequence (chordIn, noteOnSequence);
     // 1/32 at 120 BPM = 0.0625s = 3000 samples. Run 9 such steps.
     int totalBlocks = 14;
     for (int b = 0; b < totalBlocks; ++b)
     {
         juce::MidiBuffer m;
         h.arp.process (m, 1024, 120.0);
-        for (auto& e : collectNoteEvents (m))
-            if (e.isOn) noteOnSequence.push_back (e.note);
+        collectIntoSequence (m, noteOnSequence);
     }
 
     VK_REQUIRE ((int) noteOnSequence.size() >= 4);
@@ -146,6 +156,8 @@ VK_TEST (Arpeggiator_DownModeStepsDescending)
     h.arp.process (chordIn, 32, 120.0);
 
     std::vector<int> seq;
+    for (auto& e : collectNoteEvents (chordIn))
+        if (e.isOn) seq.push_back (e.note);
     for (int b = 0; b < 14; ++b)
     {
         juce::MidiBuffer m;
@@ -175,6 +187,8 @@ VK_TEST (Arpeggiator_UpDownModeReversesAtPeak)
     // 1/32 at 120 BPM = 3000 samples per step; we need to drive at least
     // 5 * 3000 samples to capture the full reversal pattern.
     std::vector<int> seq;
+    for (auto& e : collectNoteEvents (chordIn))
+        if (e.isOn) seq.push_back (e.note);
     for (int b = 0; b < 16; ++b)
     {
         juce::MidiBuffer m;
@@ -205,6 +219,8 @@ VK_TEST (Arpeggiator_OctaveRangeStacksCopiesUp)
     h.arp.process (chordIn, 32, 120.0);
 
     std::vector<int> seq;
+    for (auto& e : collectNoteEvents (chordIn))
+        if (e.isOn) seq.push_back (e.note);
     for (int b = 0; b < 8; ++b)
     {
         juce::MidiBuffer m;
@@ -219,6 +235,67 @@ VK_TEST (Arpeggiator_OctaveRangeStacksCopiesUp)
     VK_EXPECT_EQ (seq[1], 72);
     VK_EXPECT_EQ (seq[2], 60);
     VK_EXPECT_EQ (seq[3], 72);
+}
+
+VK_TEST (Arpeggiator_FirstStepLandsOnFreshPress)
+{
+    // Regression: previously the OFF -> ON transition (and the free-ticking
+    // grid through silence) deferred the first step by up to a full
+    // stepSamples - perceptible as latency, especially at slow divisions
+    // (~0.5s at 1/4 + 120 BPM). The first arp note should now land on the
+    // press itself instead of "wherever the silent grid happened to be".
+    ArpHarness h;
+    setParameter (h.tp, "arp_on",      1.0f);
+    setParameter (h.tp, "arp_mode",    (float) ArpMode::Up);
+    setParameter (h.tp, "arp_div",     4.0f); // 1/4 - slow division
+    setParameter (h.tp, "arp_octaves", 1.0f);
+
+    // Toggle-on with a chord pressed in the same block: step 0 lands on
+    // sample 0.
+    juce::MidiBuffer mb = pressChord ({ 60 });
+    h.arp.process (mb, 256, 120.0);
+
+    int onAt = -1;
+    for (auto& e : collectNoteEvents (mb))
+        if (e.isOn && e.note == 60) { onAt = e.sample; break; }
+    VK_EXPECT (onAt >= 0);
+    VK_EXPECT_LT (onAt, 4);
+}
+
+VK_TEST (Arpeggiator_FirstStepResetsGridOnEmptyToHeldTransition)
+{
+    // Once the arp is on and ticking, releasing every key should leave the
+    // grid free-ticking through silence. The next press starts a fresh
+    // phrase and the first step of that phrase lands on the press itself,
+    // not on the next grid boundary inherited from the silent stretch.
+    ArpHarness h;
+    setParameter (h.tp, "arp_on",      1.0f);
+    setParameter (h.tp, "arp_mode",    (float) ArpMode::Up);
+    setParameter (h.tp, "arp_div",     4.0f);
+    setParameter (h.tp, "arp_octaves", 1.0f);
+
+    // Drive the arp through a press + release so the grid is mid-cycle.
+    juce::MidiBuffer p1 = pressChord ({ 60 });
+    h.arp.process (p1, 256, 120.0);
+    juce::MidiBuffer r1;
+    r1.addEvent (Midi::noteOff (60), 0);
+    h.arp.process (r1, 256, 120.0);
+    // Run halfway into a step so the grid is well past zero when the next
+    // press lands.
+    juce::MidiBuffer empty;
+    h.arp.process (empty, 6000, 120.0);
+
+    // Fresh press should land on the press sample, not be delayed by the
+    // remaining time in the previously-running grid cycle.
+    juce::MidiBuffer p2;
+    p2.addEvent (Midi::noteOn (64, 100), 100);
+    h.arp.process (p2, 256, 120.0);
+
+    int onAt = -1;
+    for (auto& e : collectNoteEvents (p2))
+        if (e.isOn && e.note == 64) { onAt = e.sample; break; }
+    VK_EXPECT (onAt >= 100);
+    VK_EXPECT_LT (onAt, 104);
 }
 
 VK_TEST (Arpeggiator_LatchKeepsNotesAfterRelease)
