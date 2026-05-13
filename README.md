@@ -123,11 +123,11 @@ the [Actions tab](https://github.com/rocketbombs/VaporKey/actions) hosts
 per-push builds and the [Releases page](https://github.com/rocketbombs/VaporKey/releases)
 hosts every tagged version.
 
-| Platform | Download | Drop the `.vst3` here |
-|----------|----------|-----------------------|
-| Windows  | [VaporKey-0.5.1-Windows.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.1/VaporKey-0.5.1-Windows.zip) | `C:\Program Files\Common Files\VST3\` |
-| macOS    | [VaporKey-0.5.1-macOS.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.1/VaporKey-0.5.1-macOS.zip)   | `~/Library/Audio/Plug-Ins/VST3/` |
-| Linux    | [VaporKey-0.5.1-Linux.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.1/VaporKey-0.5.1-Linux.zip)   | `~/.vst3/` |
+| Platform | VST3 | Standalone | Install VST3 to |
+|----------|------|------------|-----------------|
+| Windows  | [VaporKey-Windows-VST3.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.1/VaporKey-Windows-VST3.zip) | [VaporKey-Windows-Standalone.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.1/VaporKey-Windows-Standalone.zip) | `C:\Program Files\Common Files\VST3\` |
+| macOS    | [VaporKey-macOS-VST3.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.1/VaporKey-macOS-VST3.zip)     | [VaporKey-macOS-Standalone.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.1/VaporKey-macOS-Standalone.zip)     | `~/Library/Audio/Plug-Ins/VST3/`      |
+| Linux    | [VaporKey-Linux-VST3.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.1/VaporKey-Linux-VST3.zip)     | [VaporKey-Linux-Standalone.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.1/VaporKey-Linux-Standalone.zip)     | `~/.vst3/`                            |
 
 On macOS, clear the quarantine attribute after copying so the host will load it:
 
