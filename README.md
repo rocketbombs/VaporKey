@@ -118,16 +118,16 @@ A short track built from six instances of VaporKey plus drums:
 ### Prebuilt (recommended)
 
 Every push builds and validates VST3 + Standalone for Windows, macOS, and
-Linux. Direct downloads for the current tagged release (v0.5.0) are below;
+Linux. Direct downloads for the current tagged release (v0.5.1) are below;
 the [Actions tab](https://github.com/rocketbombs/VaporKey/actions) hosts
 per-push builds and the [Releases page](https://github.com/rocketbombs/VaporKey/releases)
 hosts every tagged version.
 
 | Platform | Download | Drop the `.vst3` here |
 |----------|----------|-----------------------|
-| Windows  | [VaporKey-0.5.0-Windows.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.0/VaporKey-0.5.0-Windows.zip) | `C:\Program Files\Common Files\VST3\` |
-| macOS    | [VaporKey-0.5.0-macOS.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.0/VaporKey-0.5.0-macOS.zip)   | `~/Library/Audio/Plug-Ins/VST3/` |
-| Linux    | [VaporKey-0.5.0-Linux.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.0/VaporKey-0.5.0-Linux.zip)   | `~/.vst3/` |
+| Windows  | [VaporKey-0.5.1-Windows.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.1/VaporKey-0.5.1-Windows.zip) | `C:\Program Files\Common Files\VST3\` |
+| macOS    | [VaporKey-0.5.1-macOS.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.1/VaporKey-0.5.1-macOS.zip)   | `~/Library/Audio/Plug-Ins/VST3/` |
+| Linux    | [VaporKey-0.5.1-Linux.zip](https://github.com/rocketbombs/VaporKey/releases/download/v0.5.1/VaporKey-0.5.1-Linux.zip)   | `~/.vst3/` |
 
 On macOS, clear the quarantine attribute after copying so the host will load it:
 
